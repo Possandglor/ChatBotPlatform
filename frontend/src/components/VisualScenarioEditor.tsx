@@ -168,6 +168,16 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
     loadAvailableScenarios();
   }, []);
 
+  // Синхронизация selectedNode с обновленными nodes
+  useEffect(() => {
+    if (selectedNode) {
+      const updatedNode = nodes.find(node => node.id === selectedNode.id);
+      if (updatedNode && updatedNode !== selectedNode) {
+        setSelectedNode(updatedNode);
+      }
+    }
+  }, [nodes, selectedNode]);
+
   // Загрузка переданного сценария для редактирования
   useEffect(() => {
     if (editingScenario) {
@@ -204,6 +214,14 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
         node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
       )
     );
+    
+    // Синхронизируем selectedNode с обновленными данными
+    if (selectedNode && selectedNode.id === nodeId) {
+      setSelectedNode({
+        ...selectedNode,
+        data: { ...selectedNode.data, ...newData }
+      });
+    }
   };
 
   const deleteNode = (nodeId: string) => {
@@ -621,6 +639,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
             onChange={(e) => updateNodeData(selectedNode.id, { content: e.target.value })}
             rows={3}
             placeholder="Введите текст узла"
+            disabled={false}
           />
         </Form.Item>
 
@@ -633,6 +652,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
               })}
               rows={4}
               placeholder="условие 1&#10;условие 2&#10;комплексное условие"
+              disabled={false}
             />
           </Form.Item>
         )}
@@ -644,6 +664,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
               onChange={(e) => updateNodeData(selectedNode.id, { prompt: e.target.value })}
               rows={4}
               placeholder="Введите промпт для LLM модели"
+              disabled={false}
             />
           </Form.Item>
         )}
@@ -654,6 +675,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
               value={data.target_scenario || ''}
               onChange={(e) => updateNodeData(selectedNode.id, { target_scenario: e.target.value })}
               placeholder="scenario-id"
+              disabled={false}
             />
           </Form.Item>
         )}
@@ -665,12 +687,14 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
                 value={data.url || ''}
                 onChange={(e) => updateNodeData(selectedNode.id, { url: e.target.value })}
                 placeholder="https://api.example.com/endpoint"
+                disabled={false}
               />
             </Form.Item>
             <Form.Item label="Метод">
               <Select
                 value={data.method || 'GET'}
                 onChange={(value) => updateNodeData(selectedNode.id, { method: value })}
+                disabled={false}
               >
                 <Option value="GET">GET</Option>
                 <Option value="POST">POST</Option>
