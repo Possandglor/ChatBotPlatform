@@ -11,6 +11,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Map;
 
 @Path("/api/v1")
@@ -240,8 +241,34 @@ public class ProxyController {
     }
     
     private Response proxyPut(String url, Object request) {
-        // Простая реализация через POST для совместимости
-        return proxyPost(url, request);
+        try {
+            LOG.infof("Proxying PUT to: %s", url);
+            
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(request)))
+                .timeout(Duration.ofSeconds(30))
+                .build();
+                
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            
+            LOG.infof("PUT response status: %d", response.statusCode());
+            
+            if (response.body() != null && !response.body().isEmpty()) {
+                return Response.status(response.statusCode())
+                    .entity(response.body())
+                    .build();
+            } else {
+                return Response.status(response.statusCode()).build();
+            }
+                
+        } catch (Exception e) {
+            LOG.errorf(e, "Error proxying PUT to %s", url);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(Map.of("error", "Proxy error: " + e.getMessage()))
+                .build();
+        }
     }
     
     private Response proxyDelete(String url) {

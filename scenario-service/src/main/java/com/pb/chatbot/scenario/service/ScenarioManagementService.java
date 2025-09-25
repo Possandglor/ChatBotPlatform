@@ -107,6 +107,12 @@ public class ScenarioManagementService {
                     "type", "ask",
                     "parameters", Map.of("question", "Как вас зовут?"),
                     "next_nodes", List.of("greet_user")
+                ),
+                Map.of(
+                    "id", "greet_user",
+                    "type", "announce", 
+                    "parameters", Map.of("message", "Приятно познакомиться, {last_answer}! Чем могу помочь?"),
+                    "next_nodes", List.of()
                 )
             )
         );

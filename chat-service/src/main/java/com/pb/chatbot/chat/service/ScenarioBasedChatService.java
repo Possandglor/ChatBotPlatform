@@ -154,7 +154,8 @@ public class ScenarioBasedChatService {
                 java.util.List<String> askNextNodes = (java.util.List<String>) currentNode.get("next_nodes");
                 if (askNextNodes != null && !askNextNodes.isEmpty()) {
                     state.currentStep = askNextNodes.get(0);
-                    return String.format("Спасибо за ответ '%s'! Что-то еще?", message);
+                    // Обработать следующий узел вместо возврата шаблонного ответа
+                    return processNextNode(state, nodes);
                 }
                 return "Спасибо за ответ!";
                 
@@ -173,7 +174,15 @@ public class ScenarioBasedChatService {
                 if ("ask".equals(nodeType) && parameters != null) {
                     return (String) parameters.get("question");
                 } else if ("announce".equals(nodeType) && parameters != null) {
-                    return (String) parameters.get("message");
+                    String message = (String) parameters.get("message");
+                    // Подстановка переменных
+                    if (message != null && message.contains("{last_answer}")) {
+                        String lastAnswer = (String) state.context.get("last_answer");
+                        if (lastAnswer != null) {
+                            message = message.replace("{last_answer}", lastAnswer);
+                        }
+                    }
+                    return message;
                 }
             }
         }

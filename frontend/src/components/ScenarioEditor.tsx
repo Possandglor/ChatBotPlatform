@@ -29,7 +29,12 @@ interface Scenario {
   nodes: ScenarioNode[];
 }
 
-const ScenarioEditor: React.FC = () => {
+interface ScenarioEditorProps {
+  editingScenario?: any;
+  onScenarioSaved?: () => void;
+}
+
+const ScenarioEditor: React.FC<ScenarioEditorProps> = ({ editingScenario, onScenarioSaved }) => {
   const [currentScenario, setCurrentScenario] = useState<Scenario>({
     name: '',
     description: '',
@@ -38,6 +43,21 @@ const ScenarioEditor: React.FC = () => {
   });
   const [selectedNodeId, setSelectedNodeId] = useState<string>('');
   const [importModalVisible, setImportModalVisible] = useState(false);
+  const [importText, setImportText] = useState('');
+
+  // Загрузка редактируемого сценария
+  useEffect(() => {
+    if (editingScenario) {
+      setCurrentScenario({
+        id: editingScenario.id,
+        name: editingScenario.name,
+        description: editingScenario.description,
+        trigger_intents: editingScenario.trigger_intents || [],
+        nodes: editingScenario.nodes || []
+      });
+      message.info(`Загружен сценарий: ${editingScenario.name}`);
+    }
+  }, [editingScenario]);
   const [importJson, setImportJson] = useState('');
 
   const addNode = (type: ScenarioNode['type']) => {
@@ -79,13 +99,26 @@ const ScenarioEditor: React.FC = () => {
     try {
       if (currentScenario.id) {
         await scenarioService.updateScenario(currentScenario.id, currentScenario);
+        message.success('Сценарий обновлен');
       } else {
         await scenarioService.createScenario(currentScenario);
+        message.success('Сценарий создан');
       }
-      message.success('Сценарий сохранен');
+      onScenarioSaved?.(); // Вызываем callback для обновления списка
     } catch (error) {
       message.error('Ошибка сохранения сценария');
     }
+  };
+
+  const createNewScenario = () => {
+    setCurrentScenario({
+      name: '',
+      description: '',
+      trigger_intents: [],
+      nodes: []
+    });
+    setSelectedNodeId('');
+    message.info('Создание нового сценария');
   };
 
   const importScenario = () => {
@@ -249,7 +282,13 @@ const ScenarioEditor: React.FC = () => {
               icon={<SaveOutlined />}
               onClick={saveScenario}
             >
-              Сохранить сценарий
+              {currentScenario.id ? 'Обновить сценарий' : 'Создать сценарий'}
+            </Button>
+            <Button 
+              icon={<PlusOutlined />}
+              onClick={createNewScenario}
+            >
+              Новый сценарий
             </Button>
             <Button 
               icon={<ImportOutlined />}

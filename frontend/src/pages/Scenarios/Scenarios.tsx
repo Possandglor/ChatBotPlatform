@@ -20,6 +20,8 @@ const Scenarios: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [viewModalVisible, setViewModalVisible] = useState(false);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
+  const [editingScenario, setEditingScenario] = useState<Scenario | null>(null);
+  const [activeTab, setActiveTab] = useState('list');
 
   useEffect(() => {
     loadScenarios();
@@ -50,6 +52,11 @@ const Scenarios: React.FC = () => {
   const viewScenario = (scenario: Scenario) => {
     setSelectedScenario(scenario);
     setViewModalVisible(true);
+  };
+
+  const editScenario = (scenario: Scenario) => {
+    setEditingScenario(scenario);
+    setActiveTab('editor'); // Переключаемся на вкладку редактора
   };
 
   const columns = [
@@ -91,12 +98,20 @@ const Scenarios: React.FC = () => {
             type="text"
             icon={<EyeOutlined />}
             onClick={() => viewScenario(record)}
+            title="Просмотр"
+          />
+          <Button
+            type="text"
+            icon={<EditOutlined />}
+            onClick={() => editScenario(record)}
+            title="Редактировать"
           />
           <Button
             type="text"
             danger
             icon={<DeleteOutlined />}
             onClick={() => deleteScenario(record.id)}
+            title="Удалить"
           />
         </Space>
       ),
@@ -112,7 +127,7 @@ const Scenarios: React.FC = () => {
           Визуальный редактор
         </span>
       ),
-      children: <VisualScenarioEditor />
+      children: <VisualScenarioEditor editingScenario={editingScenario} onScenarioSaved={() => { setEditingScenario(null); loadScenarios(); }} />
     },
     {
       key: 'editor',
@@ -122,7 +137,7 @@ const Scenarios: React.FC = () => {
           Редактор форм
         </span>
       ),
-      children: <ScenarioEditor />
+      children: <ScenarioEditor editingScenario={editingScenario} onScenarioSaved={() => { setEditingScenario(null); loadScenarios(); }} />
     },
     {
       key: 'list',
@@ -163,7 +178,11 @@ const Scenarios: React.FC = () => {
 
   return (
     <div style={{ padding: 24 }}>
-      <Tabs defaultActiveKey="visual" items={tabItems} />
+      <Tabs 
+        activeKey={activeTab} 
+        onChange={setActiveTab}
+        items={tabItems} 
+      />
 
       <Modal
         title="Просмотр сценария"

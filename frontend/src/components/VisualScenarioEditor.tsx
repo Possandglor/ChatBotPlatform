@@ -14,7 +14,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Card, Button, Space, Select, Input, message, Tag, Drawer, Form, Modal, List } from 'antd';
-import { PlusOutlined, SaveOutlined, SettingOutlined, ExportOutlined, ImportOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { PlusOutlined, SaveOutlined, SettingOutlined, ExportOutlined, ImportOutlined, FolderOpenOutlined, DeleteOutlined } from '@ant-design/icons';
 import { scenarioService } from '../services/scenarioService';
 
 const { Option } = Select;
@@ -142,7 +142,12 @@ const nodeTypes: NodeTypes = {
   custom: CustomNode,
 };
 
-const VisualScenarioEditor: React.FC = () => {
+interface VisualScenarioEditorProps {
+  editingScenario?: any;
+  onScenarioSaved?: () => void;
+}
+
+const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScenario, onScenarioSaved }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNodeType, setSelectedNodeType] = useState<string>('message');
@@ -155,17 +160,29 @@ const VisualScenarioEditor: React.FC = () => {
   const [scenarioDescription, setScenarioDescription] = useState('');
   const [importJson, setImportJson] = useState('');
   const [availableScenarios, setAvailableScenarios] = useState<any[]>([]);
+  const [editingScenarioId, setEditingScenarioId] = useState<string | null>(null);
 
   useEffect(() => {
     loadAvailableScenarios();
   }, []);
 
+  // Загрузка переданного сценария для редактирования
+  useEffect(() => {
+    if (editingScenario) {
+      loadScenario(editingScenario);
+      setEditingScenarioId(editingScenario.id);
+      message.info(`Загружен сценарий: ${editingScenario.name}`);
+    }
+  }, [editingScenario]);
+
   const loadAvailableScenarios = async () => {
     try {
-      const response = await scenarioService.getScenarios();
-      setAvailableScenarios(response.scenarios || []);
+      const scenarios = await scenarioService.getScenarios();
+      console.log('Loaded scenarios:', scenarios);
+      setAvailableScenarios(scenarios || []);
     } catch (error) {
       console.error('Error loading scenarios:', error);
+      message.error('Ошибка загрузки списка сценариев');
     }
   };
 
@@ -185,6 +202,14 @@ const VisualScenarioEditor: React.FC = () => {
         node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
       )
     );
+  };
+
+  const deleteNode = (nodeId: string) => {
+    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    setSelectedNode(null);
+    setSettingsVisible(false);
+    message.success('Узел удален');
   };
 
   const addNode = () => {
@@ -251,14 +276,32 @@ const VisualScenarioEditor: React.FC = () => {
     };
 
     try {
-      await scenarioService.createScenario(scenarioData);
-      message.success('Сценарий сохранен в общий список');
+      if (editingScenarioId) {
+        // Обновляем существующий сценарий
+        await scenarioService.updateScenario(editingScenarioId, scenarioData);
+        message.success('Сценарий обновлен');
+      } else {
+        // Создаем новый сценарий
+        await scenarioService.createScenario(scenarioData);
+        message.success('Сценарий создан');
+      }
       setSaveModalVisible(false);
       setScenarioName('');
       setScenarioDescription('');
+      onScenarioSaved?.(); // Вызываем callback для обновления списка
     } catch (error) {
       message.error('Ошибка сохранения сценария');
     }
+  };
+
+  const createNewScenario = () => {
+    setNodes([]);
+    setEdges([]);
+    setScenarioName('');
+    setScenarioDescription('');
+    setSelectedNode(null);
+    setEditingScenarioId(null); // Очищаем ID редактируемого сценария
+    message.info('Создание нового сценария');
   };
 
   const exportScenario = () => {
@@ -337,15 +380,25 @@ const VisualScenarioEditor: React.FC = () => {
     try {
       const scenarioData = scenario.scenario_data;
       if (!scenarioData || !scenarioData.nodes) {
-        message.error('Сценарий не содержит данных для визуального редактора');
+        // Создаем пустой сценарий для редактирования
+        setNodes([]);
+        setEdges([]);
+        setScenarioName(scenario.name);
+        setScenarioDescription(scenario.description);
+        setEditingScenarioId(scenario.id);
+        setLoadModalVisible(false);
+        message.warning(`Сценарий "${scenario.name}" загружен как пустой для редактирования`);
         return;
       }
 
       // Convert scenario nodes to ReactFlow format
-      const loadedNodes = scenarioData.nodes.map((node: any) => ({
+      const loadedNodes = scenarioData.nodes.map((node: any, index: number) => ({
         id: node.id,
         type: 'custom',
-        position: node.position || { x: Math.random() * 300, y: Math.random() * 300 },
+        position: node.position || { 
+          x: 100 + (index % 3) * 200, 
+          y: 100 + Math.floor(index / 3) * 150 
+        },
         data: {
           type: node.type,
           content: node.parameters?.message || node.parameters?.question || 'Узел без содержимого',
@@ -391,6 +444,7 @@ const VisualScenarioEditor: React.FC = () => {
       setNodes(loadedNodes);
       setScenarioName(scenario.name);
       setScenarioDescription(scenario.description);
+      setEditingScenarioId(scenario.id); // Устанавливаем ID для редактирования
       setLoadModalVisible(false);
       message.success(`Сценарий "${scenario.name}" загружен`);
     } catch (error) {
@@ -463,6 +517,18 @@ const VisualScenarioEditor: React.FC = () => {
             </Form.Item>
           </>
         )}
+        
+        <Form.Item>
+          <Button 
+            type="primary" 
+            danger 
+            icon={<DeleteOutlined />}
+            onClick={() => deleteNode(selectedNode.id)}
+            style={{ marginTop: 16 }}
+          >
+            Удалить узел
+          </Button>
+        </Form.Item>
       </Form>
     );
   };
@@ -489,7 +555,10 @@ const VisualScenarioEditor: React.FC = () => {
             Добавить узел
           </Button>
           <Button type="default" icon={<SaveOutlined />} onClick={() => setSaveModalVisible(true)}>
-            Сохранить
+            {editingScenarioId ? 'Обновить' : 'Сохранить'}
+          </Button>
+          <Button type="default" icon={<PlusOutlined />} onClick={createNewScenario}>
+            Новый
           </Button>
           <Button type="default" icon={<FolderOpenOutlined />} onClick={() => setLoadModalVisible(true)}>
             Загрузить
@@ -577,7 +646,14 @@ const VisualScenarioEditor: React.FC = () => {
         title="Загрузить существующий сценарий"
         open={loadModalVisible}
         onCancel={() => setLoadModalVisible(false)}
-        footer={null}
+        footer={[
+          <Button key="refresh" onClick={loadAvailableScenarios}>
+            Обновить список
+          </Button>,
+          <Button key="cancel" onClick={() => setLoadModalVisible(false)}>
+            Отмена
+          </Button>
+        ]}
         width={800}
       >
         <List
