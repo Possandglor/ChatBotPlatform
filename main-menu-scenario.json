@@ -1,0 +1,238 @@
+{
+  "id": "main-menu-001",
+  "name": "Главное меню с NLU",
+  "version": "1.0",
+  "language": "uk",
+  "start_node": "greeting",
+  "nodes": [
+    {
+      "id": "greeting",
+      "type": "announce",
+      "parameters": {
+        "message": "Привет! Я ваш банковский помощник. Що саме вас цікавить?"
+      },
+      "next_nodes": ["wait_for_intent"]
+    },
+    {
+      "id": "wait_for_intent",
+      "type": "ask",
+      "parameters": {
+        "question": "Опишите, чем могу помочь:",
+        "inputType": "text",
+        "required": true
+      },
+      "next_nodes": ["nlu_analysis"]
+    },
+    {
+      "id": "nlu_analysis",
+      "type": "nlu-request",
+      "parameters": {
+        "service": "nlu-service",
+        "endpoint": "/api/v1/nlu/analyze",
+        "method": "POST",
+        "data": {
+          "text": "{user_input}",
+          "context": "{session_context}"
+        }
+      },
+      "next_nodes": ["route_by_intent"],
+      "conditions": {
+        "success": "route_by_intent",
+        "error": "nlu_error"
+      }
+    },
+    {
+      "id": "route_by_intent",
+      "type": "condition",
+      "parameters": {
+        "condition": "nlu_response.intent"
+      },
+      "conditions": {
+        "check_balance": "balance_scenario",
+        "block_card": "block_scenario",
+        "close_account": "close_scenario",
+        "transfer_money": "transfer_scenario",
+        "get_statement": "statement_scenario",
+        "complaint": "complaint_scenario",
+        "greeting": "greeting_response",
+        "unknown": "operator_transfer",
+        "default": "clarification"
+      }
+    },
+    {
+      "id": "balance_scenario",
+      "type": "sub-flow",
+      "parameters": {
+        "scenario_id": "balance-check-001",
+        "inherit_context": true
+      },
+      "conditions": {
+        "completed": "ask_more_help",
+        "cancelled": "main_menu"
+      }
+    },
+    {
+      "id": "block_scenario",
+      "type": "sub-flow",
+      "parameters": {
+        "scenario_id": "card-blocking-001",
+        "inherit_context": true
+      },
+      "conditions": {
+        "completed": "ask_more_help",
+        "cancelled": "main_menu"
+      }
+    },
+    {
+      "id": "close_scenario",
+      "type": "sub-flow",
+      "parameters": {
+        "scenario_id": "account-closure-001",
+        "inherit_context": true
+      },
+      "conditions": {
+        "completed": "ask_more_help",
+        "cancelled": "main_menu"
+      }
+    },
+    {
+      "id": "transfer_scenario",
+      "type": "sub-flow",
+      "parameters": {
+        "scenario_id": "money-transfer-001",
+        "inherit_context": true
+      },
+      "conditions": {
+        "completed": "ask_more_help",
+        "cancelled": "main_menu"
+      }
+    },
+    {
+      "id": "statement_scenario",
+      "type": "sub-flow",
+      "parameters": {
+        "scenario_id": "statement-request-001",
+        "inherit_context": true
+      },
+      "conditions": {
+        "completed": "ask_more_help",
+        "cancelled": "main_menu"
+      }
+    },
+    {
+      "id": "complaint_scenario",
+      "type": "sub-flow",
+      "parameters": {
+        "scenario_id": "complaint-handling-001",
+        "inherit_context": true
+      },
+      "conditions": {
+        "completed": "ask_more_help",
+        "cancelled": "main_menu"
+      }
+    },
+    {
+      "id": "greeting_response",
+      "type": "announce",
+      "parameters": {
+        "message": "Привет! Рад помочь. Что вас интересует?"
+      },
+      "next_nodes": ["wait_for_intent"]
+    },
+    {
+      "id": "operator_transfer",
+      "type": "announce",
+      "parameters": {
+        "message": "Не смог понять ваш запрос. Соединяю с оператором..."
+      },
+      "next_nodes": ["transfer_to_operator"]
+    },
+    {
+      "id": "transfer_to_operator",
+      "type": "api-request",
+      "parameters": {
+        "service": "operator-service",
+        "endpoint": "/api/v1/transfer",
+        "method": "POST",
+        "data": {
+          "session_id": "{session_id}",
+          "user_message": "{user_input}",
+          "reason": "nlu_failed"
+        }
+      },
+      "next_nodes": ["end_session"]
+    },
+    {
+      "id": "clarification",
+      "type": "announce",
+      "parameters": {
+        "message": "Уточните, пожалуйста, что именно вас интересует? Например: проверить баланс, заблокировать карту, сделать перевод."
+      },
+      "next_nodes": ["wait_for_intent"]
+    },
+    {
+      "id": "nlu_error",
+      "type": "announce",
+      "parameters": {
+        "message": "Произошла техническая ошибка. Соединяю с оператором..."
+      },
+      "next_nodes": ["transfer_to_operator"]
+    },
+    {
+      "id": "ask_more_help",
+      "type": "ask",
+      "parameters": {
+        "question": "Могу ли еще чем-то помочь?",
+        "inputType": "text"
+      },
+      "next_nodes": ["parse_more_help"]
+    },
+    {
+      "id": "parse_more_help",
+      "type": "nlu-request",
+      "parameters": {
+        "service": "nlu-service",
+        "endpoint": "/api/v1/nlu/analyze",
+        "method": "POST",
+        "data": {
+          "text": "{user_input}",
+          "context": "{session_context}"
+        }
+      },
+      "next_nodes": ["check_more_help"]
+    },
+    {
+      "id": "check_more_help",
+      "type": "condition",
+      "parameters": {
+        "condition": "nlu_response.entities"
+      },
+      "conditions": {
+        "yes": "wait_for_intent",
+        "no": "goodbye",
+        "default": "wait_for_intent"
+      }
+    },
+    {
+      "id": "goodbye",
+      "type": "announce",
+      "parameters": {
+        "message": "Спасибо за обращение! До свидания!"
+      },
+      "next_nodes": ["end_session"]
+    },
+    {
+      "id": "end_session",
+      "type": "announce",
+      "parameters": {
+        "message": "Сессия завершена."
+      },
+      "next_nodes": []
+    }
+  ],
+  "context": {
+    "user_input": null,
+    "nlu_response": null,
+    "session_context": {}
+  }
+}

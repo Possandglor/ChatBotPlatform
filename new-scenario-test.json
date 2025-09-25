@@ -1,0 +1,202 @@
+{
+  "id": "loan-application-001",
+  "name": "Заявка на кредит",
+  "description": "Сценарий подачи заявки на потребительский кредит",
+  "category": "loans",
+  "tags": ["кредит", "заявка", "финансы"],
+  "start_node": "loan_greeting",
+  "nodes": [
+    {
+      "id": "loan_greeting",
+      "type": "announce",
+      "parameters": {
+        "message": "Добро пожаловать в сервис кредитования! Поможем оформить кредит быстро и удобно."
+      },
+      "next_nodes": ["ask_loan_amount"]
+    },
+    {
+      "id": "ask_loan_amount",
+      "type": "ask",
+      "parameters": {
+        "question": "На какую сумму вы хотите получить кредит? (от 5,000 до 500,000 грн)",
+        "inputType": "number",
+        "validation": "\\d+"
+      },
+      "next_nodes": ["parse_amount"]
+    },
+    {
+      "id": "parse_amount",
+      "type": "parse",
+      "parameters": {
+        "script": "context.loanAmount = parseInt(input); context.validAmount = context.loanAmount >= 5000 && context.loanAmount <= 500000"
+      },
+      "next_nodes": ["check_amount"],
+      "conditions": {
+        "error": "ask_loan_amount"
+      }
+    },
+    {
+      "id": "check_amount",
+      "type": "condition",
+      "parameters": {
+        "condition": "context.validAmount == true"
+      },
+      "conditions": {
+        "true": "ask_loan_term",
+        "false": "amount_error"
+      }
+    },
+    {
+      "id": "amount_error",
+      "type": "announce",
+      "parameters": {
+        "message": "Сумма должна быть от 5,000 до 500,000 грн. Попробуйте еще раз."
+      },
+      "next_nodes": ["ask_loan_amount"]
+    },
+    {
+      "id": "ask_loan_term",
+      "type": "ask",
+      "parameters": {
+        "question": "На какой срок? Выберите:\n1. 12 месяцев (ставка 18%)\n2. 24 месяца (ставка 20%)\n3. 36 месяцев (ставка 22%)",
+        "inputType": "choice"
+      },
+      "next_nodes": ["parse_term"]
+    },
+    {
+      "id": "parse_term",
+      "type": "parse",
+      "parameters": {
+        "script": "if(input=='1') {context.term=12; context.rate=18} else if(input=='2') {context.term=24; context.rate=20} else if(input=='3') {context.term=36; context.rate=22} else {context.validTerm=false}"
+      },
+      "next_nodes": ["calculate_payment"]
+    },
+    {
+      "id": "calculate_payment",
+      "type": "announce",
+      "parameters": {
+        "message": "Расчет кредита:\n💰 Сумма: {context.loanAmount} грн\n📅 Срок: {context.term} месяцев\n📊 Ставка: {context.rate}% годовых\n💳 Ежемесячный платеж: ~{context.monthlyPayment} грн"
+      },
+      "next_nodes": ["ask_confirmation"]
+    },
+    {
+      "id": "ask_confirmation",
+      "type": "ask",
+      "parameters": {
+        "question": "Подтверждаете заявку? (да/нет)",
+        "inputType": "confirmation"
+      },
+      "next_nodes": ["parse_confirmation"]
+    },
+    {
+      "id": "parse_confirmation",
+      "type": "parse",
+      "parameters": {
+        "script": "context.confirmed = input.toLowerCase().includes('да')"
+      },
+      "next_nodes": ["check_confirmation"]
+    },
+    {
+      "id": "check_confirmation",
+      "type": "condition",
+      "parameters": {
+        "condition": "context.confirmed == true"
+      },
+      "conditions": {
+        "true": "submit_application",
+        "false": "cancel_application"
+      }
+    },
+    {
+      "id": "submit_application",
+      "type": "api-request",
+      "parameters": {
+        "service": "loan-service",
+        "endpoint": "/api/v1/applications",
+        "method": "POST",
+        "data": {
+          "amount": "{context.loanAmount}",
+          "term": "{context.term}",
+          "rate": "{context.rate}",
+          "user_id": "{context.userId}"
+        }
+      },
+      "conditions": {
+        "success": "application_success",
+        "error": "application_error"
+      }
+    },
+    {
+      "id": "application_success",
+      "type": "announce",
+      "parameters": {
+        "message": "✅ Заявка успешно подана!\n📋 Номер заявки: {api_response.application_id}\n📞 Менеджер свяжется с вами в течение 2 часов.\n📧 Детали отправлены на email."
+      },
+      "next_nodes": ["send_notification"]
+    },
+    {
+      "id": "send_notification",
+      "type": "notification",
+      "parameters": {
+        "type": "sms",
+        "template": "loan_application_submitted",
+        "recipient": "{context.userPhone}",
+        "data": {
+          "application_id": "{api_response.application_id}",
+          "amount": "{context.loanAmount}"
+        }
+      },
+      "next_nodes": ["end_success"]
+    },
+    {
+      "id": "application_error",
+      "type": "announce",
+      "parameters": {
+        "message": "❌ Произошла ошибка при подаче заявки. Попробуйте позже или обратитесь к менеджеру: 0 800 123 456"
+      },
+      "next_nodes": ["end_error"]
+    },
+    {
+      "id": "cancel_application",
+      "type": "announce",
+      "parameters": {
+        "message": "Заявка отменена. Если передумаете - обращайтесь! Всегда рады помочь."
+      },
+      "next_nodes": ["end_cancel"]
+    },
+    {
+      "id": "end_success",
+      "type": "announce",
+      "parameters": {
+        "message": "Спасибо за обращение! Ждем вас снова."
+      },
+      "next_nodes": []
+    },
+    {
+      "id": "end_error",
+      "type": "announce",
+      "parameters": {
+        "message": "Приносим извинения за неудобства."
+      },
+      "next_nodes": []
+    },
+    {
+      "id": "end_cancel",
+      "type": "announce",
+      "parameters": {
+        "message": "До свидания!"
+      },
+      "next_nodes": []
+    }
+  ],
+  "context": {
+    "loanAmount": null,
+    "term": null,
+    "rate": null,
+    "monthlyPayment": null,
+    "confirmed": false,
+    "validAmount": false,
+    "userId": null,
+    "userPhone": null
+  }
+}

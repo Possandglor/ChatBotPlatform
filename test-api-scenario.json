@@ -1,0 +1,118 @@
+{
+  "session_id": "test-api-session",
+  "scenario_id": "test-api-001",
+  "scenario": {
+    "id": "test-api-001",
+    "name": "Тест API интеграции",
+    "startNode": "api_start",
+    "nodes": [
+      {
+        "id": "api_start",
+        "type": "announce",
+        "parameters": {
+          "message": "🚀 Тестируем интеграцию с API на localhost:8181\nВыберите действие:\n1. GET /api/info\n2. POST /api/data"
+        },
+        "nextNodes": ["ask_action"]
+      },
+      {
+        "id": "ask_action",
+        "type": "ask",
+        "parameters": {
+          "question": "Введите 1 или 2:",
+          "inputType": "choice"
+        },
+        "nextNodes": ["route_action"]
+      },
+      {
+        "id": "route_action",
+        "type": "condition",
+        "parameters": {
+          "condition": "input"
+        },
+        "conditions": {
+          "1": "get_info",
+          "2": "post_data",
+          "default": "unknown_action"
+        }
+      },
+      {
+        "id": "get_info",
+        "type": "api-request",
+        "parameters": {
+          "service": "external-api",
+          "endpoint": "/api/info",
+          "method": "GET",
+          "baseUrl": "http://localhost:8181",
+          "timeout": 5000
+        },
+        "conditions": {
+          "success": "show_info",
+          "error": "api_error"
+        }
+      },
+      {
+        "id": "show_info",
+        "type": "announce",
+        "parameters": {
+          "message": "✅ Успешно получили данные от API!\n📊 Сервис: {api_response.service}\n📈 Версия: {api_response.version}\n📋 Запросов: {api_response.stats.requests}"
+        },
+        "nextNodes": ["end"]
+      },
+      {
+        "id": "post_data",
+        "type": "api-request",
+        "parameters": {
+          "service": "external-api",
+          "endpoint": "/api/data",
+          "method": "POST",
+          "baseUrl": "http://localhost:8181",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "data": {
+            "test_message": "Привет от чат-бота!",
+            "session_id": "{session_id}",
+            "timestamp": "2025-09-24T15:35:00Z"
+          },
+          "timeout": 5000
+        },
+        "conditions": {
+          "success": "show_post_result",
+          "error": "api_error"
+        }
+      },
+      {
+        "id": "show_post_result",
+        "type": "announce",
+        "parameters": {
+          "message": "✅ Данные успешно отправлены!\n🆔 ID: {api_response.processed.id}\n📥 Получено: {api_response.received.test_message}\n⏰ Время: {api_response.processed.timestamp}"
+        },
+        "nextNodes": ["end"]
+      },
+      {
+        "id": "api_error",
+        "type": "announce",
+        "parameters": {
+          "message": "❌ Ошибка при обращении к API!\nПроверьте доступность сервиса на localhost:8181"
+        },
+        "nextNodes": ["end"]
+      },
+      {
+        "id": "unknown_action",
+        "type": "announce",
+        "parameters": {
+          "message": "❓ Неизвестное действие. Введите 1 или 2."
+        },
+        "nextNodes": ["ask_action"]
+      },
+      {
+        "id": "end",
+        "type": "announce",
+        "parameters": {
+          "message": "🎉 Тест API интеграции завершен!"
+        },
+        "nextNodes": []
+      }
+    ]
+  }
+}

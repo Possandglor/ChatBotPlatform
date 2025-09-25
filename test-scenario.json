@@ -1,0 +1,120 @@
+{
+  "id": "balance-check-001",
+  "name": "Проверка баланса карты",
+  "version": "1.0",
+  "language": "uk",
+  "start_node": "greeting",
+  "nodes": [
+    {
+      "id": "greeting",
+      "type": "announce",
+      "parameters": {
+        "message": "Привет! Я помогу вам проверить баланс карты.",
+        "delay": 500
+      },
+      "next_nodes": ["ask_card_check"]
+    },
+    {
+      "id": "ask_card_check",
+      "type": "ask",
+      "parameters": {
+        "question": "Хотите проверить баланс карты? (да/нет)",
+        "inputType": "text",
+        "required": true
+      },
+      "next_nodes": ["parse_answer"]
+    },
+    {
+      "id": "parse_answer",
+      "type": "parse",
+      "parameters": {
+        "script": "context.userAnswer = input.toLowerCase(); context.wantsBalance = input.toLowerCase().includes('да') || input.toLowerCase().includes('yes');"
+      },
+      "next_nodes": ["check_answer"],
+      "conditions": {
+        "error": "ask_card_check"
+      }
+    },
+    {
+      "id": "check_answer",
+      "type": "condition",
+      "parameters": {
+        "condition": "context.wantsBalance == true"
+      },
+      "conditions": {
+        "true": "ask_card_number",
+        "false": "goodbye"
+      }
+    },
+    {
+      "id": "ask_card_number",
+      "type": "ask",
+      "parameters": {
+        "question": "Введите последние 4 цифры карты:",
+        "inputType": "number",
+        "required": true
+      },
+      "next_nodes": ["parse_card"]
+    },
+    {
+      "id": "parse_card",
+      "type": "parse",
+      "parameters": {
+        "script": "context.cardNumber = input; context.validCard = input.length == 4 && /^\\d+$/.test(input);"
+      },
+      "next_nodes": ["validate_card"],
+      "conditions": {
+        "error": "ask_card_number"
+      }
+    },
+    {
+      "id": "validate_card",
+      "type": "condition",
+      "parameters": {
+        "condition": "context.validCard == true"
+      },
+      "conditions": {
+        "true": "show_balance",
+        "false": "card_error"
+      }
+    },
+    {
+      "id": "show_balance",
+      "type": "announce",
+      "parameters": {
+        "message": "Баланс карты ****{context.cardNumber}: 15,250.50 грн. Спасибо за обращение!"
+      },
+      "next_nodes": ["end"]
+    },
+    {
+      "id": "card_error",
+      "type": "announce",
+      "parameters": {
+        "message": "Неверный формат номера карты. Попробуйте еще раз."
+      },
+      "next_nodes": ["ask_card_number"]
+    },
+    {
+      "id": "goodbye",
+      "type": "announce",
+      "parameters": {
+        "message": "Хорошо, если понадобится помощь - обращайтесь!"
+      },
+      "next_nodes": ["end"]
+    },
+    {
+      "id": "end",
+      "type": "announce",
+      "parameters": {
+        "message": "До свидания!"
+      },
+      "next_nodes": []
+    }
+  ],
+  "context": {
+    "userAnswer": null,
+    "wantsBalance": false,
+    "cardNumber": null,
+    "validCard": false
+  }
+}

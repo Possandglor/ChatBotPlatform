@@ -1,0 +1,213 @@
+{
+  "id": "api-integration-001",
+  "name": "Интеграция с внешним API",
+  "description": "Тестовый сценарий для проверки интеграции с API на порту 8181",
+  "category": "api_test",
+  "tags": ["api", "интеграция", "тест"],
+  "start_node": "api_greeting",
+  "nodes": [
+    {
+      "id": "api_greeting",
+      "type": "announce",
+      "parameters": {
+        "message": "Привет! Проверим интеграцию с внешним API. Что хотите сделать?\n1. Получить информацию об API\n2. Отправить тестовые данные\n3. Проверить статус системы"
+      },
+      "next_nodes": ["ask_api_action"]
+    },
+    {
+      "id": "ask_api_action",
+      "type": "ask",
+      "parameters": {
+        "question": "Выберите действие (1-3):",
+        "inputType": "choice"
+      },
+      "next_nodes": ["parse_api_action"]
+    },
+    {
+      "id": "parse_api_action",
+      "type": "parse",
+      "parameters": {
+        "script": "if(input=='1') {context.action='info'} else if(input=='2') {context.action='data'} else if(input=='3') {context.action='status'} else {context.action='unknown'}"
+      },
+      "next_nodes": ["route_api_action"]
+    },
+    {
+      "id": "route_api_action",
+      "type": "condition",
+      "parameters": {
+        "condition": "context.action"
+      },
+      "conditions": {
+        "info": "get_api_info",
+        "data": "ask_test_data",
+        "status": "get_api_status",
+        "default": "unknown_action"
+      }
+    },
+    {
+      "id": "get_api_info",
+      "type": "api-request",
+      "parameters": {
+        "service": "external-api",
+        "endpoint": "/api/info",
+        "method": "GET",
+        "baseUrl": "http://localhost:8181",
+        "timeout": 5000
+      },
+      "conditions": {
+        "success": "show_api_info",
+        "error": "api_error",
+        "timeout": "api_timeout"
+      }
+    },
+    {
+      "id": "show_api_info",
+      "type": "announce",
+      "parameters": {
+        "message": "📊 Информация об API:\n🔹 Сервис: {api_response.service}\n🔹 Версия: {api_response.version}\n🔹 Запросов: {api_response.stats.requests}\n🔹 Память: {api_response.stats.memory_usage}\n🔹 Время работы: {api_response.stats.uptime}"
+      },
+      "next_nodes": ["ask_more_api"]
+    },
+    {
+      "id": "ask_test_data",
+      "type": "ask",
+      "parameters": {
+        "question": "Введите тестовые данные для отправки:",
+        "inputType": "text"
+      },
+      "next_nodes": ["send_test_data"]
+    },
+    {
+      "id": "send_test_data",
+      "type": "api-request",
+      "parameters": {
+        "service": "external-api",
+        "endpoint": "/api/data",
+        "method": "POST",
+        "baseUrl": "http://localhost:8181",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "data": {
+          "user_input": "{user_input}",
+          "session_id": "{session_id}",
+          "timestamp": "{current_time}"
+        },
+        "timeout": 5000
+      },
+      "conditions": {
+        "success": "show_api_response",
+        "error": "api_error",
+        "timeout": "api_timeout"
+      }
+    },
+    {
+      "id": "show_api_response",
+      "type": "announce",
+      "parameters": {
+        "message": "✅ Данные успешно отправлены!\n📥 Получено: {api_response.received.user_input}\n🆔 ID обработки: {api_response.processed.id}\n⏰ Время: {api_response.processed.timestamp}\n📊 Статус: {api_response.status}"
+      },
+      "next_nodes": ["ask_more_api"]
+    },
+    {
+      "id": "get_api_status",
+      "type": "api-request",
+      "parameters": {
+        "service": "external-api",
+        "endpoint": "/api/info",
+        "method": "GET",
+        "baseUrl": "http://localhost:8181",
+        "timeout": 3000
+      },
+      "conditions": {
+        "success": "show_api_status",
+        "error": "api_error",
+        "timeout": "api_timeout"
+      }
+    },
+    {
+      "id": "show_api_status",
+      "type": "announce",
+      "parameters": {
+        "message": "🟢 API работает нормально!\n📈 Статистика:\n  • Запросов обработано: {api_response.stats.requests}\n  • Использование памяти: {api_response.stats.memory_usage}\n  • Время работы: {api_response.stats.uptime}"
+      },
+      "next_nodes": ["ask_more_api"]
+    },
+    {
+      "id": "api_error",
+      "type": "announce",
+      "parameters": {
+        "message": "❌ Ошибка при обращении к API!\nПроверьте:\n• Доступность сервиса на localhost:8181\n• Правильность endpoint'а\n• Сетевое соединение"
+      },
+      "next_nodes": ["ask_more_api"]
+    },
+    {
+      "id": "api_timeout",
+      "type": "announce",
+      "parameters": {
+        "message": "⏰ Превышено время ожидания ответа от API!\nВозможные причины:\n• Медленный ответ сервиса\n• Проблемы с сетью\n• Высокая нагрузка на API"
+      },
+      "next_nodes": ["ask_more_api"]
+    },
+    {
+      "id": "unknown_action",
+      "type": "announce",
+      "parameters": {
+        "message": "❓ Неизвестное действие. Выберите:\n1. Информация об API\n2. Отправить данные\n3. Проверить статус"
+      },
+      "next_nodes": ["ask_api_action"]
+    },
+    {
+      "id": "ask_more_api",
+      "type": "ask",
+      "parameters": {
+        "question": "Хотите выполнить еще какие-то действия с API? (да/нет)",
+        "inputType": "confirmation"
+      },
+      "next_nodes": ["parse_more_api"]
+    },
+    {
+      "id": "parse_more_api",
+      "type": "parse",
+      "parameters": {
+        "script": "context.continue = input.toLowerCase().includes('да')"
+      },
+      "next_nodes": ["check_continue_api"]
+    },
+    {
+      "id": "check_continue_api",
+      "type": "condition",
+      "parameters": {
+        "condition": "context.continue == true"
+      },
+      "conditions": {
+        "true": "api_greeting",
+        "false": "api_goodbye"
+      }
+    },
+    {
+      "id": "api_goodbye",
+      "type": "announce",
+      "parameters": {
+        "message": "👋 Тестирование API завершено!\nСпасибо за использование интеграции!"
+      },
+      "next_nodes": ["end_api_session"]
+    },
+    {
+      "id": "end_api_session",
+      "type": "announce",
+      "parameters": {
+        "message": "Сессия API тестирования завершена."
+      },
+      "next_nodes": []
+    }
+  ],
+  "context": {
+    "action": null,
+    "continue": false,
+    "user_input": null,
+    "session_id": null,
+    "current_time": null,
+    "api_response": null
+  }
+}

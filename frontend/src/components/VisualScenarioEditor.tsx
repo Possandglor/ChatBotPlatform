@@ -1,0 +1,615 @@
+import React, { useCallback, useState, useEffect } from 'react';
+import ReactFlow, {
+  Node,
+  Edge,
+  addEdge,
+  Connection,
+  useNodesState,
+  useEdgesState,
+  Controls,
+  Background,
+  NodeTypes,
+  Handle,
+  Position,
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+import { Card, Button, Space, Select, Input, message, Tag, Drawer, Form, Modal, List } from 'antd';
+import { PlusOutlined, SaveOutlined, SettingOutlined, ExportOutlined, ImportOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { scenarioService } from '../services/scenarioService';
+
+const { Option } = Select;
+const { TextArea } = Input;
+
+// Custom node component with proper handles
+const CustomNode = ({ data, id, selected }: { data: any; id: string; selected: boolean }) => {
+  const getNodeColor = (type: string) => {
+    const colors = {
+      message: '#52c41a',
+      input: '#1890ff', 
+      condition: '#faad14',
+      api_call: '#722ed1',
+      menu: '#13c2c2',
+      scenario_jump: '#eb2f96',
+      transfer: '#f5222d',
+      end: '#8c8c8c'
+    };
+    return colors[type as keyof typeof colors] || '#d9d9d9';
+  };
+
+  const renderOutputHandles = () => {
+    if (data.type === 'condition') {
+      const conditions = data.conditions || ['true', 'false'];
+      return conditions.map((condition: string, index: number) => (
+        <Handle
+          key={`${id}-${condition}`}
+          type="source"
+          position={Position.Right}
+          id={condition}
+          style={{ 
+            top: `${30 + (index * 25)}px`,
+            background: getNodeColor(data.type)
+          }}
+        />
+      ));
+    } else if (data.type === 'menu') {
+      const options = data.options || ['option1', 'option2'];
+      return options.map((option: string, index: number) => (
+        <Handle
+          key={`${id}-${option}`}
+          type="source"
+          position={Position.Right}
+          id={option}
+          style={{ 
+            top: `${30 + (index * 25)}px`,
+            background: getNodeColor(data.type)
+          }}
+        />
+      ));
+    } else if (data.type !== 'end') {
+      return (
+        <Handle
+          type="source"
+          position={Position.Right}
+          style={{ background: getNodeColor(data.type) }}
+        />
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {/* Input handle (left side) */}
+      {data.type !== 'message' && (
+        <Handle
+          type="target"
+          position={Position.Left}
+          style={{ background: getNodeColor(data.type) }}
+        />
+      )}
+      
+      <Card 
+        size="small"
+        style={{ 
+          minWidth: 180,
+          minHeight: data.type === 'condition' || data.type === 'menu' ? 120 : 80,
+          border: selected ? `3px solid #1890ff` : `2px solid ${getNodeColor(data.type)}`,
+          borderRadius: 8,
+          boxShadow: selected ? '0 0 10px rgba(24, 144, 255, 0.3)' : 'none'
+        }}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Tag color={getNodeColor(data.type)} style={{ margin: 0 }}>
+              {data.type.toUpperCase()}
+            </Tag>
+            {selected && <SettingOutlined style={{ color: '#1890ff' }} />}
+          </div>
+        }
+      >
+        <div style={{ fontSize: 12, marginBottom: 8 }}>
+          {data.content || data.message || 'Настройте узел'}
+        </div>
+        
+        {/* Show conditions/options */}
+        {data.type === 'condition' && (
+          <div style={{ fontSize: 10 }}>
+            {(data.conditions || ['true', 'false']).map((condition: string, index: number) => (
+              <div key={condition} style={{ marginBottom: 2 }}>
+                → {condition}
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {data.type === 'menu' && (
+          <div style={{ fontSize: 10 }}>
+            {(data.options || ['option1', 'option2']).map((option: string, index: number) => (
+              <div key={option} style={{ marginBottom: 2 }}>
+                → {option}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      
+      {/* Output handles (right side) */}
+      {renderOutputHandles()}
+    </div>
+  );
+};
+
+const nodeTypes: NodeTypes = {
+  custom: CustomNode,
+};
+
+const VisualScenarioEditor: React.FC = () => {
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [selectedNodeType, setSelectedNodeType] = useState<string>('message');
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [saveModalVisible, setSaveModalVisible] = useState(false);
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [loadModalVisible, setLoadModalVisible] = useState(false);
+  const [scenarioName, setScenarioName] = useState('');
+  const [scenarioDescription, setScenarioDescription] = useState('');
+  const [importJson, setImportJson] = useState('');
+  const [availableScenarios, setAvailableScenarios] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadAvailableScenarios();
+  }, []);
+
+  const loadAvailableScenarios = async () => {
+    try {
+      const response = await scenarioService.getScenarios();
+      setAvailableScenarios(response.scenarios || []);
+    } catch (error) {
+      console.error('Error loading scenarios:', error);
+    }
+  };
+
+  const onConnect = useCallback(
+    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges]
+  );
+
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    setSelectedNode(node);
+    setSettingsVisible(true);
+  }, []);
+
+  const updateNodeData = (nodeId: string, newData: any) => {
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
+      )
+    );
+  };
+
+  const addNode = () => {
+    const baseData = { 
+      type: selectedNodeType,
+      content: `Новый ${selectedNodeType} узел`
+    };
+    
+    // Add specific data for different node types
+    let nodeData = baseData;
+    if (selectedNodeType === 'condition') {
+      nodeData = { ...baseData, conditions: ['true', 'false'] };
+    } else if (selectedNodeType === 'menu') {
+      nodeData = { ...baseData, options: ['Вариант 1', 'Вариант 2'] };
+    }
+
+    const newNode: Node = {
+      id: `node_${Date.now()}`,
+      type: 'custom',
+      position: { x: Math.random() * 300 + 50, y: Math.random() * 300 + 50 },
+      data: nodeData,
+    };
+    setNodes((nds) => nds.concat(newNode));
+  };
+
+  const saveScenarioToList = async () => {
+    if (!scenarioName.trim()) {
+      message.error('Введите название сценария');
+      return;
+    }
+
+    const scenarioData = {
+      name: scenarioName,
+      description: scenarioDescription,
+      version: '1.0',
+      language: 'uk',
+      category: 'custom',
+      tags: ['визуальный'],
+      is_active: true,
+      scenario_data: {
+        start_node: nodes.find(n => n.data.type === 'message')?.id || nodes[0]?.id,
+        nodes: nodes.map(node => ({
+          type: node.data.type,
+          id: node.id,
+          parameters: {
+            message: node.data.content,
+            conditions: node.data.conditions,
+            options: node.data.options,
+            url: node.data.url,
+            method: node.data.method
+          },
+          next_nodes: edges
+            .filter(edge => edge.source === node.id)
+            .map(edge => edge.target),
+          position: node.position
+        })),
+        edges: edges.map(edge => ({
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle
+        }))
+      }
+    };
+
+    try {
+      await scenarioService.createScenario(scenarioData);
+      message.success('Сценарий сохранен в общий список');
+      setSaveModalVisible(false);
+      setScenarioName('');
+      setScenarioDescription('');
+    } catch (error) {
+      message.error('Ошибка сохранения сценария');
+    }
+  };
+
+  const exportScenario = () => {
+    const exportData = {
+      name: scenarioName || 'Визуальный сценарий',
+      description: scenarioDescription || 'Экспортированный сценарий',
+      nodes: nodes.map(node => ({
+        id: node.id,
+        type: node.data.type,
+        content: node.data.content,
+        conditions: node.data.conditions,
+        options: node.data.options,
+        url: node.data.url,
+        method: node.data.method,
+        position: node.position
+      })),
+      edges: edges.map(edge => ({
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle
+      }))
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${scenarioName || 'scenario'}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success('Сценарий экспортирован');
+  };
+
+  const importScenario = () => {
+    try {
+      const imported = JSON.parse(importJson);
+      
+      // Convert imported data to ReactFlow format
+      const importedNodes = imported.nodes?.map((node: any) => ({
+        id: node.id,
+        type: 'custom',
+        position: node.position || { x: Math.random() * 300, y: Math.random() * 300 },
+        data: {
+          type: node.type,
+          content: node.content,
+          conditions: node.conditions,
+          options: node.options,
+          url: node.url,
+          method: node.method
+        }
+      })) || [];
+
+      const importedEdges = imported.edges?.map((edge: any) => ({
+        id: `${edge.source}-${edge.target}`,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
+        type: 'smoothstep',
+        animated: true
+      })) || [];
+
+      setNodes(importedNodes);
+      setEdges(importedEdges);
+      setScenarioName(imported.name || '');
+      setScenarioDescription(imported.description || '');
+      setImportModalVisible(false);
+      message.success('Сценарий импортирован');
+    } catch (error) {
+      message.error('Ошибка импорта: неверный JSON');
+    }
+  };
+
+  const loadScenario = (scenario: any) => {
+    try {
+      const scenarioData = scenario.scenario_data;
+      if (!scenarioData || !scenarioData.nodes) {
+        message.error('Сценарий не содержит данных для визуального редактора');
+        return;
+      }
+
+      // Convert scenario nodes to ReactFlow format
+      const loadedNodes = scenarioData.nodes.map((node: any) => ({
+        id: node.id,
+        type: 'custom',
+        position: node.position || { x: Math.random() * 300, y: Math.random() * 300 },
+        data: {
+          type: node.type,
+          content: node.parameters?.message || node.parameters?.question || 'Узел без содержимого',
+          conditions: node.parameters?.conditions,
+          options: node.parameters?.options,
+          url: node.parameters?.url,
+          method: node.parameters?.method
+        }
+      }));
+
+      // Convert edges if available
+      const loadedEdges = scenarioData.edges?.map((edge: any) => ({
+        id: `${edge.source}-${edge.target}`,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
+        type: 'smoothstep',
+        animated: true
+      })) || [];
+
+      // If no edges, create them from next_nodes
+      if (loadedEdges.length === 0) {
+        const generatedEdges: any[] = [];
+        scenarioData.nodes.forEach((node: any) => {
+          if (node.next_nodes && node.next_nodes.length > 0) {
+            node.next_nodes.forEach((targetId: string) => {
+              generatedEdges.push({
+                id: `${node.id}-${targetId}`,
+                source: node.id,
+                target: targetId,
+                type: 'smoothstep',
+                animated: true
+              });
+            });
+          }
+        });
+        setEdges(generatedEdges);
+      } else {
+        setEdges(loadedEdges);
+      }
+
+      setNodes(loadedNodes);
+      setScenarioName(scenario.name);
+      setScenarioDescription(scenario.description);
+      setLoadModalVisible(false);
+      message.success(`Сценарий "${scenario.name}" загружен`);
+    } catch (error) {
+      message.error('Ошибка загрузки сценария');
+      console.error('Load scenario error:', error);
+    }
+  };
+
+  const renderNodeSettings = () => {
+    if (!selectedNode) return null;
+
+    const { data } = selectedNode;
+
+    return (
+      <Form layout="vertical">
+        <Form.Item label="Содержимое">
+          <TextArea
+            value={data.content || ''}
+            onChange={(e) => updateNodeData(selectedNode.id, { content: e.target.value })}
+            rows={3}
+            placeholder="Введите текст узла"
+          />
+        </Form.Item>
+
+        {data.type === 'condition' && (
+          <Form.Item label="Условия (по одному на строку)">
+            <TextArea
+              value={(data.conditions || []).join('\n')}
+              onChange={(e) => updateNodeData(selectedNode.id, { 
+                conditions: e.target.value.split('\n').filter(Boolean) 
+              })}
+              rows={4}
+              placeholder="true&#10;false&#10;другое условие"
+            />
+          </Form.Item>
+        )}
+
+        {data.type === 'menu' && (
+          <Form.Item label="Варианты меню (по одному на строку)">
+            <TextArea
+              value={(data.options || []).join('\n')}
+              onChange={(e) => updateNodeData(selectedNode.id, { 
+                options: e.target.value.split('\n').filter(Boolean) 
+              })}
+              rows={4}
+              placeholder="Вариант 1&#10;Вариант 2&#10;Вариант 3"
+            />
+          </Form.Item>
+        )}
+
+        {data.type === 'api_call' && (
+          <>
+            <Form.Item label="URL">
+              <Input
+                value={data.url || ''}
+                onChange={(e) => updateNodeData(selectedNode.id, { url: e.target.value })}
+                placeholder="https://api.example.com/endpoint"
+              />
+            </Form.Item>
+            <Form.Item label="Метод">
+              <Select
+                value={data.method || 'GET'}
+                onChange={(value) => updateNodeData(selectedNode.id, { method: value })}
+              >
+                <Option value="GET">GET</Option>
+                <Option value="POST">POST</Option>
+                <Option value="PUT">PUT</Option>
+                <Option value="DELETE">DELETE</Option>
+              </Select>
+            </Form.Item>
+          </>
+        )}
+      </Form>
+    );
+  };
+
+  return (
+    <div style={{ height: '600px', border: '1px solid #d9d9d9', borderRadius: 8 }}>
+      <div style={{ padding: 16, borderBottom: '1px solid #d9d9d9', background: '#fafafa' }}>
+        <Space>
+          <Select 
+            value={selectedNodeType} 
+            onChange={setSelectedNodeType}
+            style={{ width: 120 }}
+          >
+            <Option value="message">Сообщение</Option>
+            <Option value="input">Ввод</Option>
+            <Option value="condition">Условие</Option>
+            <Option value="api_call">API вызов</Option>
+            <Option value="menu">Меню</Option>
+            <Option value="scenario_jump">Переход</Option>
+            <Option value="transfer">Оператор</Option>
+            <Option value="end">Конец</Option>
+          </Select>
+          <Button type="primary" icon={<PlusOutlined />} onClick={addNode}>
+            Добавить узел
+          </Button>
+          <Button type="default" icon={<SaveOutlined />} onClick={() => setSaveModalVisible(true)}>
+            Сохранить
+          </Button>
+          <Button type="default" icon={<FolderOpenOutlined />} onClick={() => setLoadModalVisible(true)}>
+            Загрузить
+          </Button>
+          <Button type="default" icon={<ExportOutlined />} onClick={exportScenario}>
+            Экспорт
+          </Button>
+          <Button type="default" icon={<ImportOutlined />} onClick={() => setImportModalVisible(true)}>
+            Импорт
+          </Button>
+        </Space>
+      </div>
+      
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onNodeClick={onNodeClick}
+        nodeTypes={nodeTypes}
+        fitView
+        connectionLineType="smoothstep"
+        defaultEdgeOptions={{
+          type: 'smoothstep',
+          animated: true,
+          style: { strokeWidth: 2 }
+        }}
+      >
+        <Controls />
+        <Background />
+      </ReactFlow>
+
+      <Drawer
+        title={`Настройки узла: ${selectedNode?.data.type.toUpperCase()}`}
+        placement="right"
+        onClose={() => setSettingsVisible(false)}
+        open={settingsVisible}
+        width={400}
+      >
+        {renderNodeSettings()}
+      </Drawer>
+
+      <Modal
+        title="Сохранить сценарий"
+        open={saveModalVisible}
+        onOk={saveScenarioToList}
+        onCancel={() => setSaveModalVisible(false)}
+      >
+        <Form layout="vertical">
+          <Form.Item label="Название сценария" required>
+            <Input
+              value={scenarioName}
+              onChange={(e) => setScenarioName(e.target.value)}
+              placeholder="Например: Проверка баланса"
+            />
+          </Form.Item>
+          <Form.Item label="Описание">
+            <TextArea
+              value={scenarioDescription}
+              onChange={(e) => setScenarioDescription(e.target.value)}
+              placeholder="Описание сценария"
+              rows={3}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="Импорт сценария"
+        open={importModalVisible}
+        onOk={importScenario}
+        onCancel={() => setImportModalVisible(false)}
+        width={600}
+      >
+        <TextArea
+          value={importJson}
+          onChange={(e) => setImportJson(e.target.value)}
+          placeholder="Вставьте JSON сценария..."
+          rows={15}
+        />
+      </Modal>
+
+      <Modal
+        title="Загрузить существующий сценарий"
+        open={loadModalVisible}
+        onCancel={() => setLoadModalVisible(false)}
+        footer={null}
+        width={800}
+      >
+        <List
+          dataSource={availableScenarios}
+          renderItem={(scenario) => (
+            <List.Item
+              actions={[
+                <Button 
+                  type="primary" 
+                  onClick={() => loadScenario(scenario)}
+                >
+                  Загрузить
+                </Button>
+              ]}
+            >
+              <List.Item.Meta
+                title={scenario.name}
+                description={
+                  <div>
+                    <div>{scenario.description}</div>
+                    <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                      Категория: {scenario.category} | Теги: {scenario.tags?.join(', ')}
+                    </div>
+                  </div>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      </Modal>
+    </div>
+  );
+};
+
+export default VisualScenarioEditor;

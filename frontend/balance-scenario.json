@@ -1,0 +1,100 @@
+{
+  "name": "Проверка баланса карты",
+  "description": "Сценарий проверки баланса с выбором типа карты",
+  "trigger_intents": ["check_balance", "balance_inquiry", "card_balance"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "message",
+      "content": "Для проверки баланса выберите тип карты:",
+      "next_node": "card_type_menu"
+    },
+    {
+      "id": "card_type_menu",
+      "type": "menu",
+      "content": "Какую карту проверяем?",
+      "options": [
+        {
+          "text": "💳 Дебетовая карта",
+          "value": "debit",
+          "next_node": "check_debit"
+        },
+        {
+          "text": "💎 Кредитная карта",
+          "value": "credit",
+          "next_node": "check_credit"
+        }
+      ]
+    },
+    {
+      "id": "check_debit",
+      "type": "api_call",
+      "api_url": "http://localhost:8181/api/balance/debit",
+      "api_method": "GET",
+      "next_node": "show_debit_balance"
+    },
+    {
+      "id": "show_debit_balance",
+      "type": "message",
+      "content": "💳 Баланс дебетовой карты: {api_response.balance} грн\n💰 Доступно: {api_response.available} грн",
+      "next_node": "ask_more_actions"
+    },
+    {
+      "id": "check_credit",
+      "type": "api_call",
+      "api_url": "http://localhost:8181/api/balance/credit",
+      "api_method": "GET",
+      "next_node": "show_credit_balance"
+    },
+    {
+      "id": "show_credit_balance",
+      "type": "message",
+      "content": "💎 Баланс кредитной карты: {api_response.balance} грн\n💳 Кредитный лимит: {api_response.credit_limit} грн\n💰 Доступно: {api_response.available} грн",
+      "next_node": "ask_more_actions"
+    },
+    {
+      "id": "ask_more_actions",
+      "type": "menu",
+      "content": "Что еще вас интересует?",
+      "options": [
+        {
+          "text": "🔄 Проверить другую карту",
+          "value": "other_card",
+          "next_node": "card_type_menu"
+        },
+        {
+          "text": "🏠 Главное меню",
+          "value": "main_menu",
+          "next_node": "back_to_main"
+        },
+        {
+          "text": "👤 Связаться с оператором",
+          "value": "operator",
+          "next_node": "transfer_operator"
+        },
+        {
+          "text": "❌ Завершить",
+          "value": "end",
+          "next_node": "end"
+        }
+      ]
+    },
+    {
+      "id": "back_to_main",
+      "type": "scenario_jump",
+      "target_scenario": "main-menu-001",
+      "content": "Возвращаемся в главное меню..."
+    },
+    {
+      "id": "transfer_operator",
+      "type": "transfer",
+      "content": "Соединяю с оператором. Ожидайте...",
+      "next_node": "end"
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "content": "Спасибо за использование мобильного банка!"
+    }
+  ]
+}

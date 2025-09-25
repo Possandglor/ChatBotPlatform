@@ -1,0 +1,80 @@
+{
+  "name": "Главное меню",
+  "description": "Основной сценарий с главным меню банковских услуг",
+  "trigger_intents": ["greeting", "main_menu", "start"],
+  "nodes": [
+    {
+      "id": "welcome",
+      "type": "message",
+      "content": "Добро пожаловать в мобильный банк! Я ваш виртуальный помощник.",
+      "next_node": "main_menu"
+    },
+    {
+      "id": "main_menu",
+      "type": "menu",
+      "content": "Выберите, что вас интересует:",
+      "options": [
+        {
+          "text": "💳 Баланс карты",
+          "value": "balance",
+          "next_node": "redirect_balance"
+        },
+        {
+          "text": "💸 Переводы",
+          "value": "transfer",
+          "next_node": "redirect_transfer"
+        },
+        {
+          "text": "📊 История операций",
+          "value": "history",
+          "next_node": "redirect_history"
+        },
+        {
+          "text": "🔒 Заблокировать карту",
+          "value": "block",
+          "next_node": "redirect_block"
+        },
+        {
+          "text": "👤 Связаться с оператором",
+          "value": "operator",
+          "next_node": "transfer_operator"
+        }
+      ]
+    },
+    {
+      "id": "redirect_balance",
+      "type": "scenario_jump",
+      "target_scenario": "balance-check-001",
+      "content": "Переходим к проверке баланса..."
+    },
+    {
+      "id": "redirect_transfer",
+      "type": "message",
+      "content": "Функция переводов временно недоступна. Обратитесь к оператору.",
+      "next_node": "transfer_operator"
+    },
+    {
+      "id": "redirect_history",
+      "type": "message",
+      "content": "Функция истории операций временно недоступна. Обратитесь к оператору.",
+      "next_node": "transfer_operator"
+    },
+    {
+      "id": "redirect_block",
+      "type": "message",
+      "content": "Для блокировки карты переключаю вас на оператора.",
+      "next_node": "transfer_operator"
+    },
+    {
+      "id": "transfer_operator",
+      "type": "transfer",
+      "content": "Соединяю с оператором. Ожидайте...",
+      "next_node": "end"
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "content": "Спасибо за обращение!"
+    }
+  ]
+}

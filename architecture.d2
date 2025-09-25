@@ -1,0 +1,201 @@
+title: "ChatBot Platform - Микросервисная архитектура" {
+  near: top-center
+  style.font-size: 24
+  style.bold: true
+}
+
+# Frontend Layer
+frontend: {
+  label: "React Frontend\n(Port 3000)"
+  shape: rectangle
+  style.fill: "#52c41a"
+  style.stroke: "#389e0d"
+  
+  components: {
+    dashboard: "Dashboard\n(Мониторинг)"
+    chat_test: "Chat Testing\n(Тестирование бота)"
+    scenario_mgmt: "Scenario Management\n(Управление сценариями)"
+    dialogs: "Dialog History\n(История диалогов)"
+    nlu_mgmt: "NLU Management\n(Управление интентами)"
+    users: "User Management\n(Управление пользователями)"
+    logs: "System Logs\n(Системные логи)"
+    
+    dashboard -> chat_test
+    chat_test -> scenario_mgmt
+    scenario_mgmt -> dialogs
+    dialogs -> nlu_mgmt
+    nlu_mgmt -> users
+    users -> logs
+  }
+}
+
+# API Gateway Layer
+gateway: {
+  label: "API Gateway\n(Port 8090)"
+  shape: rectangle
+  style.fill: "#1890ff"
+  style.stroke: "#096dd9"
+  
+  auth: "PowerStone + Chameleon\nАвторизация"
+  routing: "Request Routing\nМаршрутизация"
+  cors: "CORS Handler\nОбработка CORS"
+  
+  auth -> routing -> cors
+}
+
+# Core Services Layer
+services: {
+  label: "Core Services"
+  
+  chat: {
+    label: "Chat Service\n(Port 8091)"
+    shape: rectangle
+    style.fill: "#722ed1"
+    
+    session_mgmt: "Session Management\nУправление сессиями"
+    message_proc: "Message Processing\nОбработка сообщений"
+    history: "Chat History\nИстория чатов"
+    
+    session_mgmt -> message_proc -> history
+  }
+  
+  orchestrator: {
+    label: "Orchestrator\n(Port 8092)"
+    shape: rectangle
+    style.fill: "#fa541c"
+    
+    engine: "Scenario Engine\nДвижок сценариев"
+    executor: "Node Executor\nВыполнитель узлов"
+    flow: "Flow Control\nУправление потоком"
+    
+    engine -> executor -> flow
+  }
+  
+  scenario: {
+    label: "Scenario Service\n(Port 8093)"
+    shape: rectangle
+    style.fill: "#13c2c2"
+    
+    crud: "CRUD Operations\nОперации с данными"
+    validation: "Schema Validation\nВалидация схемы"
+    templates: "Template Engine\nШаблонизатор"
+    
+    crud -> validation -> templates
+  }
+  
+  nlu: {
+    label: "NLU Service\n(Port 8098)"
+    shape: rectangle
+    style.fill: "#eb2f96"
+    
+    intent: "Intent Recognition\nРаспознавание интентов"
+    entity: "Entity Extraction\nИзвлечение сущностей"
+    confidence: "Confidence Scoring\nОценка уверенности"
+    
+    intent -> entity -> confidence
+  }
+}
+
+# External Services
+external: {
+  label: "External Services"
+  
+  powerstone: {
+    label: "PowerStone\nАвторизация"
+    shape: cloud
+    style.fill: "#faad14"
+  }
+  
+  chameleon: {
+    label: "Chameleon\nСессии пользователей"
+    shape: cloud
+    style.fill: "#faad14"
+  }
+  
+  api_mock: {
+    label: "External APIs\n(Port 8181)\nМок сервисы"
+    shape: cloud
+    style.fill: "#52c41a"
+  }
+}
+
+# Data Layer
+data: {
+  label: "Data Layer"
+  
+  memory: {
+    label: "In-Memory Storage\n(Текущее состояние)"
+    shape: cylinder
+    style.fill: "#f5222d"
+  }
+  
+  postgres: {
+    label: "PostgreSQL\n(Планируется)"
+    shape: cylinder
+    style.fill: "#722ed1"
+    style.stroke-dash: 5
+  }
+}
+
+# Node Types Detail
+node_types: {
+  label: "Scenario Node Types"
+  
+  message_node: "Message Node\nОтправка сообщения"
+  input_node: "Input Node\nОжидание ввода"
+  condition_node: "Condition Node\nУсловное ветвление"
+  api_node: "API Node\nВызов внешнего API"
+  intent_node: "Intent Node\nПроверка интента"
+  variable_node: "Variable Node\nРабота с переменными"
+  jump_node: "Jump Node\nПереход к сценарию"
+  end_node: "End Node\nЗавершение диалога"
+}
+
+# Connections
+frontend -> gateway: "HTTP/REST\nAPI Calls"
+gateway -> services.chat: "Session & Messages"
+gateway -> services.orchestrator: "Dialog Flow"
+gateway -> services.scenario: "Scenario CRUD"
+gateway -> services.nlu: "Text Analysis"
+
+services.orchestrator -> services.chat: "Message Exchange"
+services.orchestrator -> services.scenario: "Scenario Loading"
+services.orchestrator -> services.nlu: "Intent Analysis"
+services.orchestrator -> external.api_mock: "External API Calls"
+
+gateway -> external.powerstone: "Authentication"
+gateway -> external.chameleon: "User Sessions"
+
+services.chat -> data.memory: "Session Storage"
+services.scenario -> data.memory: "Scenario Cache"
+services.nlu -> data.memory: "Model Cache"
+
+data.postgres -> data.memory: "Migration Path" {style.stroke-dash: 5}
+
+# Technology Stack
+tech_stack: {
+  label: "Technology Stack"
+  
+  backend: {
+    label: "Backend"
+    java: "Java 21"
+    quarkus: "Quarkus 3.24.3"
+    maven: "Maven 3.9.6"
+    packaging: "uber-jar"
+  }
+  
+  frontend_tech: {
+    label: "Frontend"
+    react: "React 19.1.1"
+    typescript: "TypeScript"
+    antd: "Ant Design"
+    zustand: "Zustand"
+  }
+  
+  deployment: {
+    label: "Deployment"
+    docker: "Docker Compose"
+    cors: "CORS Enabled"
+    env: "Environment Variables"
+  }
+}

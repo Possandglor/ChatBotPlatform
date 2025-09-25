@@ -1,0 +1,79 @@
+{
+  "name": "Проверка баланса",
+  "description": "Сценарий для проверки баланса карты клиента",
+  "trigger_intents": ["check_balance", "balance_inquiry"],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "message",
+      "content": "Здравствуйте! Для проверки баланса мне нужен номер вашей карты.",
+      "next_node": "input_card"
+    },
+    {
+      "id": "input_card",
+      "type": "input",
+      "content": "Введите номер карты (16 цифр):",
+      "variable": "card_number",
+      "next_node": "validate_card"
+    },
+    {
+      "id": "validate_card",
+      "type": "condition",
+      "condition": "card_number.length == 16",
+      "true_node": "api_balance",
+      "false_node": "error_card"
+    },
+    {
+      "id": "error_card",
+      "type": "message",
+      "content": "Неверный формат номера карты. Попробуйте еще раз.",
+      "next_node": "input_card"
+    },
+    {
+      "id": "api_balance",
+      "type": "api_call",
+      "api_url": "http://localhost:8181/api/balance",
+      "api_method": "POST",
+      "next_node": "show_balance"
+    },
+    {
+      "id": "show_balance",
+      "type": "message",
+      "content": "Ваш баланс: {api_response.balance} руб.",
+      "next_node": "menu"
+    },
+    {
+      "id": "menu",
+      "type": "menu",
+      "content": "Что еще вас интересует?",
+      "options": [
+        {
+          "text": "История операций",
+          "value": "history",
+          "next_node": "transfer_operator"
+        },
+        {
+          "text": "Заблокировать карту",
+          "value": "block",
+          "next_node": "transfer_operator"
+        },
+        {
+          "text": "Завершить",
+          "value": "end",
+          "next_node": "end"
+        }
+      ]
+    },
+    {
+      "id": "transfer_operator",
+      "type": "transfer",
+      "content": "Переключаю вас на оператора...",
+      "next_node": "end"
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "content": "Спасибо за обращение! До свидания!"
+    }
+  ]
+}

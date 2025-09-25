@@ -1,0 +1,331 @@
+{
+  "id": "card-operations-001",
+  "name": "Операции с картой - множественный выбор",
+  "version": "1.0",
+  "language": "uk", 
+  "start_node": "greeting",
+  "nodes": [
+    {
+      "id": "greeting",
+      "type": "announce",
+      "parameters": {
+        "message": "Привет! Я помогу вам с операциями по карте."
+      },
+      "next_nodes": ["ask_operation"]
+    },
+    {
+      "id": "ask_operation",
+      "type": "ask",
+      "parameters": {
+        "question": "Что вас интересует?\n1. Проверить баланс\n2. Закрыть карту\n3. Заблокировать карту\n4. История операций\n5. Связаться с поддержкой\n\nВведите номер или название операции:",
+        "options": [
+          {"value": "balance", "text": "Проверить баланс"},
+          {"value": "close", "text": "Закрыть карту"}, 
+          {"value": "block", "text": "Заблокировать карту"},
+          {"value": "history", "text": "История операций"},
+          {"value": "support", "text": "Связаться с поддержкой"}
+        ],
+        "inputType": "choice"
+      },
+      "next_nodes": ["parse_operation"]
+    },
+    {
+      "id": "parse_operation",
+      "type": "parse",
+      "parameters": {
+        "script": "let input_lower = input.toLowerCase(); if (input_lower.includes('баланс') || input_lower === '1') { context.operation = 'balance'; } else if (input_lower.includes('закрыть') || input_lower === '2') { context.operation = 'close'; } else if (input_lower.includes('блок') || input_lower === '3') { context.operation = 'block'; } else if (input_lower.includes('история') || input_lower === '4') { context.operation = 'history'; } else if (input_lower.includes('поддержк') || input_lower === '5') { context.operation = 'support'; } else { context.operation = 'unknown'; } context.validChoice = context.operation !== 'unknown';"
+      },
+      "next_nodes": ["route_operation"],
+      "conditions": {
+        "error": "ask_operation"
+      }
+    },
+    {
+      "id": "route_operation", 
+      "type": "condition",
+      "parameters": {
+        "condition": "context.operation"
+      },
+      "conditions": {
+        "balance": "balance_flow",
+        "close": "close_flow",
+        "block": "block_flow", 
+        "history": "history_flow",
+        "support": "support_flow",
+        "unknown": "invalid_choice"
+      }
+    },
+    {
+      "id": "balance_flow",
+      "type": "api-request",
+      "parameters": {
+        "service": "bank-api",
+        "endpoint": "/api/v1/accounts/balance",
+        "method": "GET",
+        "headers": {
+          "Authorization": "Bearer {context.bankToken}",
+          "Card-Number": "{context.cardNumber}"
+        },
+        "timeout": 5000
+      },
+      "next_nodes": ["show_balance"],
+      "conditions": {
+        "success": "show_balance",
+        "error": "balance_error"
+      }
+    },
+    {
+      "id": "show_balance",
+      "type": "announce", 
+      "parameters": {
+        "message": "Баланс вашей карты: {api_response.balance} {api_response.currency}. Доступно к снятию: {api_response.available} {api_response.currency}."
+      },
+      "next_nodes": ["ask_more_operations"]
+    },
+    {
+      "id": "close_flow",
+      "type": "announce",
+      "parameters": {
+        "message": "Для закрытия карты нужно подтвердить операцию. Вы уверены?"
+      },
+      "next_nodes": ["confirm_close"]
+    },
+    {
+      "id": "confirm_close",
+      "type": "ask",
+      "parameters": {
+        "question": "Подтвердите закрытие карты (да/нет):",
+        "inputType": "text"
+      },
+      "next_nodes": ["parse_close_confirmation"]
+    },
+    {
+      "id": "parse_close_confirmation",
+      "type": "parse",
+      "parameters": {
+        "script": "context.confirmClose = input.toLowerCase().includes('да') || input.toLowerCase().includes('yes');"
+      },
+      "next_nodes": ["check_close_confirmation"]
+    },
+    {
+      "id": "check_close_confirmation",
+      "type": "condition",
+      "parameters": {
+        "condition": "context.confirmClose == true"
+      },
+      "conditions": {
+        "true": "execute_close",
+        "false": "cancel_close"
+      }
+    },
+    {
+      "id": "execute_close",
+      "type": "api-request",
+      "parameters": {
+        "service": "crm-service",
+        "endpoint": "/api/v1/cards/close-request",
+        "method": "POST",
+        "data": {
+          "card_number": "{context.cardNumber}",
+          "user_id": "{context.userId}",
+          "reason": "user_request",
+          "confirmation": true
+        }
+      },
+      "next_nodes": ["close_success"],
+      "conditions": {
+        "success": "close_success",
+        "error": "close_error"
+      }
+    },
+    {
+      "id": "close_success",
+      "type": "announce",
+      "parameters": {
+        "message": "Заявка на закрытие карты создана. Номер заявки: {api_response.request_id}. В течение 3-5 рабочих дней карта будет закрыта."
+      },
+      "next_nodes": ["send_close_notification"]
+    },
+    {
+      "id": "send_close_notification",
+      "type": "notification",
+      "parameters": {
+        "type": "sms",
+        "template": "card_close_request",
+        "recipient": "{context.userPhone}",
+        "data": {
+          "request_id": "{api_response.request_id}",
+          "card_last4": "{context.cardNumber}"
+        }
+      },
+      "next_nodes": ["end"]
+    },
+    {
+      "id": "block_flow",
+      "type": "api-request",
+      "parameters": {
+        "service": "bank-api", 
+        "endpoint": "/api/v1/cards/block",
+        "method": "POST",
+        "data": {
+          "card_number": "{context.cardNumber}",
+          "reason": "user_request"
+        }
+      },
+      "next_nodes": ["block_success"],
+      "conditions": {
+        "success": "block_success",
+        "error": "block_error"
+      }
+    },
+    {
+      "id": "block_success",
+      "type": "announce",
+      "parameters": {
+        "message": "Карта успешно заблокирована. Для разблокировки обратитесь в отделение банка или позвоните в контакт-центр."
+      },
+      "next_nodes": ["end"]
+    },
+    {
+      "id": "history_flow",
+      "type": "api-request",
+      "parameters": {
+        "service": "bank-api",
+        "endpoint": "/api/v1/transactions/history",
+        "method": "GET",
+        "params": {
+          "card_number": "{context.cardNumber}",
+          "limit": "10",
+          "days": "30"
+        }
+      },
+      "next_nodes": ["show_history"],
+      "conditions": {
+        "success": "show_history",
+        "error": "history_error"
+      }
+    },
+    {
+      "id": "show_history",
+      "type": "announce",
+      "parameters": {
+        "message": "Последние операции по карте:\n{api_response.transactions_formatted}\n\nПолную историю можно посмотреть в мобильном приложении."
+      },
+      "next_nodes": ["ask_more_operations"]
+    },
+    {
+      "id": "support_flow",
+      "type": "sub-flow",
+      "parameters": {
+        "scenario_id": "support-contact-001",
+        "inherit_context": true
+      },
+      "conditions": {
+        "completed": "ask_more_operations",
+        "cancelled": "ask_operation"
+      }
+    },
+    {
+      "id": "invalid_choice",
+      "type": "announce",
+      "parameters": {
+        "message": "Не понял ваш выбор. Пожалуйста, введите номер от 1 до 5 или название операции."
+      },
+      "next_nodes": ["ask_operation"]
+    },
+    {
+      "id": "cancel_close",
+      "type": "announce",
+      "parameters": {
+        "message": "Закрытие карты отменено."
+      },
+      "next_nodes": ["ask_more_operations"]
+    },
+    {
+      "id": "ask_more_operations",
+      "type": "ask",
+      "parameters": {
+        "question": "Нужна ли еще помощь с картой? (да/нет)",
+        "inputType": "text"
+      },
+      "next_nodes": ["parse_more_operations"]
+    },
+    {
+      "id": "parse_more_operations",
+      "type": "parse",
+      "parameters": {
+        "script": "context.needMoreHelp = input.toLowerCase().includes('да') || input.toLowerCase().includes('yes');"
+      },
+      "next_nodes": ["check_more_operations"]
+    },
+    {
+      "id": "check_more_operations",
+      "type": "condition",
+      "parameters": {
+        "condition": "context.needMoreHelp == true"
+      },
+      "conditions": {
+        "true": "ask_operation",
+        "false": "goodbye"
+      }
+    },
+    {
+      "id": "balance_error",
+      "type": "announce",
+      "parameters": {
+        "message": "Не удалось получить баланс карты. Попробуйте позже или обратитесь в поддержку."
+      },
+      "next_nodes": ["ask_more_operations"]
+    },
+    {
+      "id": "close_error",
+      "type": "announce",
+      "parameters": {
+        "message": "Ошибка при создании заявки на закрытие карты. Обратитесь в отделение банка."
+      },
+      "next_nodes": ["ask_more_operations"]
+    },
+    {
+      "id": "block_error",
+      "type": "announce",
+      "parameters": {
+        "message": "Не удалось заблокировать карту. Срочно позвоните в контакт-центр: 0 800 123 456"
+      },
+      "next_nodes": ["end"]
+    },
+    {
+      "id": "history_error",
+      "type": "announce",
+      "parameters": {
+        "message": "Не удалось получить историю операций. Попробуйте в мобильном приложении."
+      },
+      "next_nodes": ["ask_more_operations"]
+    },
+    {
+      "id": "goodbye",
+      "type": "announce",
+      "parameters": {
+        "message": "Спасибо за обращение! До свидания!"
+      },
+      "next_nodes": ["end"]
+    },
+    {
+      "id": "end",
+      "type": "announce",
+      "parameters": {
+        "message": "Сессия завершена."
+      },
+      "next_nodes": []
+    }
+  ],
+  "context": {
+    "operation": null,
+    "validChoice": false,
+    "confirmClose": false,
+    "needMoreHelp": false,
+    "cardNumber": null,
+    "userId": null,
+    "userPhone": null,
+    "bankToken": null
+  }
+}
