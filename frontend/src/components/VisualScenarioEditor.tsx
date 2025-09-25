@@ -11,6 +11,7 @@ import ReactFlow, {
   NodeTypes,
   Handle,
   Position,
+  EdgeRemoveChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Card, Button, Space, Select, Input, message, Tag, Drawer, Form, Modal, List } from 'antd';
@@ -330,7 +331,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       'ask': 'Вопрос', 
       'api_call': 'API запрос',
       'llm_call': 'LLM запрос',
-      'nlu_call': 'NLU запрос',
+      'nlu-request': 'NLU запрос',
       'scenario_jump': 'Переход в сценарий',
       'transfer': 'Перевод на оператора',
       'end': 'Завершение диалога',
@@ -350,7 +351,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       nodeData = { ...baseData, url: 'https://api.example.com', method: 'GET', content: 'API запрос' };
     } else if (selectedNodeType === 'llm_call') {
       nodeData = { ...baseData, content: 'Запрос в LLM модель' };
-    } else if (selectedNodeType === 'nlu_call') {
+    } else if (selectedNodeType === 'nlu-request') {
       nodeData = { ...baseData, content: 'Анализ через NLU' };
     } else if (selectedNodeType === 'scenario_jump') {
       nodeData = { ...baseData, content: 'Переход в другой сценарий' };
@@ -390,23 +391,45 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       is_entry_point: editingScenarioId === 'greeting-001', // Сохраняем entry point статус
       scenario_data: {
         start_node: nodes.length > 0 ? nodes[0].id : 'start',
-        nodes: nodes.map(node => ({
-          id: node.id,
-          type: node.data.type,
-          parameters: {
-            message: node.data.content,
-            question: node.data.content,
-            conditions: node.data.conditions,
-            url: node.data.url,
-            method: node.data.method,
-            prompt: node.data.prompt,
-            target_scenario: node.data.target_scenario
-          },
-          next_nodes: edges
-            .filter(edge => edge.source === node.id)
-            .map(edge => edge.target),
-          position: node.position
-        })),
+        nodes: nodes.map(node => {
+          const baseNode = {
+            id: node.id,
+            type: node.data.type,
+            content: node.data.content,
+            position: node.position
+          };
+
+          // Для NLU узлов добавляем специальные параметры
+          if (node.data.type === 'nlu-request') {
+            return {
+              ...baseNode,
+              service: node.data.service || 'nlu-service',
+              endpoint: node.data.endpoint || '/api/v1/nlu/analyze',
+              conditions: {
+                success: edges.find(edge => edge.source === node.id && edge.sourceHandle === 'success')?.target || 
+                         edges.find(edge => edge.source === node.id)?.target,
+                error: edges.find(edge => edge.source === node.id && edge.sourceHandle === 'error')?.target
+              }
+            };
+          }
+
+          // Для остальных узлов используем старый формат
+          return {
+            ...baseNode,
+            parameters: {
+              message: node.data.content,
+              question: node.data.content,
+              conditions: node.data.conditions,
+              url: node.data.url,
+              method: node.data.method,
+              prompt: node.data.prompt,
+              target_scenario: node.data.target_scenario
+            },
+            next_nodes: edges
+              .filter(edge => edge.source === node.id)
+              .map(edge => edge.target)
+          };
+        }),
         edges: edges.map(edge => ({
           source: edge.source,
           target: edge.target,
@@ -568,22 +591,43 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       }
 
       // Convert scenario nodes to ReactFlow format
-      const loadedNodes = scenarioData.nodes.map((node: any, index: number) => ({
-        id: node.id,
-        type: 'custom',
-        position: node.position || { 
-          x: 100 + (index % 3) * 200, 
-          y: 100 + Math.floor(index / 3) * 150 
-        },
-        data: {
-          type: node.type,
-          content: node.parameters?.message || node.parameters?.question || 'Узел без содержимого',
-          conditions: node.parameters?.conditions,
-          options: node.parameters?.options,
-          url: node.parameters?.url,
-          method: node.parameters?.method
+      const loadedNodes = scenarioData.nodes.map((node: any, index: number) => {
+        const baseNode = {
+          id: node.id,
+          type: 'custom',
+          position: node.position || { 
+            x: 100 + (index % 3) * 200, 
+            y: 100 + Math.floor(index / 3) * 150 
+          }
+        };
+
+        // Специальная обработка для NLU узлов
+        if (node.type === 'nlu-request' || node.type === 'nlu_call') {
+          return {
+            ...baseNode,
+            data: {
+              type: 'nlu-request', // Нормализуем тип
+              content: node.content || 'Анализ через NLU',
+              service: node.service || 'nlu-service',
+              endpoint: node.endpoint || '/api/v1/nlu/analyze',
+              conditions: node.conditions
+            }
+          };
         }
-      }));
+
+        // Обычные узлы
+        return {
+          ...baseNode,
+          data: {
+            type: node.type,
+            content: node.parameters?.message || node.parameters?.question || node.content || 'Узел без содержимого',
+            conditions: node.parameters?.conditions || node.conditions,
+            options: node.parameters?.options,
+            url: node.parameters?.url,
+            method: node.parameters?.method
+          }
+        };
+      });
 
       // Convert edges if available
       const loadedEdges = scenarioData.edges?.map((edge: any) => ({
@@ -672,7 +716,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           </Form.Item>
         )}
 
-        {data.type === 'nlu_call' && (
+        {data.type === 'nlu-request' && (
           <>
             <Form.Item label="NLU сервис">
               <Input
@@ -757,7 +801,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
             <Option value="ask">Вопрос</Option>
             <Option value="api_call">Запрос в API</Option>
             <Option value="llm_call">Запрос в LLM</Option>
-            <Option value="nlu_call">Запрос в NLU</Option>
+            <Option value="nlu-request">Запрос в NLU</Option>
             <Option value="scenario_jump">Переход в сценарий</Option>
             <Option value="transfer">Перевод на оператора</Option>
             <Option value="end">Завершение диалога</Option>
@@ -802,6 +846,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           animated: true,
           style: { strokeWidth: 2 }
         }}
+        deleteKeyCode={['Delete', 'Backspace']}
+        multiSelectionKeyCode={['Meta', 'Ctrl']}
       >
         <Controls />
         <Background />
