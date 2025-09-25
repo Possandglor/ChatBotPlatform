@@ -39,14 +39,23 @@ const Scenarios: React.FC = () => {
     }
   };
 
-  const deleteScenario = async (id: string) => {
-    try {
-      await scenarioService.deleteScenario(id);
-      message.success('Сценарий удален');
-      loadScenarios();
-    } catch (error) {
-      message.error('Ошибка удаления сценария');
-    }
+  const deleteScenario = async (id: string, name: string) => {
+    Modal.confirm({
+      title: 'Удалить сценарий?',
+      content: `Вы уверены, что хотите удалить сценарий "${name}"? Это действие нельзя отменить.`,
+      okText: 'Удалить',
+      okType: 'danger',
+      cancelText: 'Отмена',
+      onOk: async () => {
+        try {
+          await scenarioService.deleteScenario(id);
+          message.success('Сценарий удален');
+          loadScenarios();
+        } catch (error) {
+          message.error('Ошибка удаления сценария');
+        }
+      }
+    });
   };
 
   const viewScenario = (scenario: Scenario) => {
@@ -110,7 +119,7 @@ const Scenarios: React.FC = () => {
             type="text"
             danger
             icon={<DeleteOutlined />}
-            onClick={() => deleteScenario(record.id)}
+            onClick={() => deleteScenario(record.id, record.name)}
             title="Удалить"
           />
         </Space>
