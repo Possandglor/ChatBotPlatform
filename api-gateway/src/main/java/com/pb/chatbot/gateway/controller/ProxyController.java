@@ -88,6 +88,12 @@ public class ProxyController {
         return proxyGet("http://localhost:8093/api/v1/scenarios");
     }
     
+    @GET
+    @Path("/scenarios/entry-point")
+    public Response getEntryPointScenario() {
+        return proxyGet("http://localhost:8093/api/v1/scenarios/entry-point");
+    }
+    
     @POST
     @Path("/scenarios")
     public Response createScenario(Map<String, Object> request) {

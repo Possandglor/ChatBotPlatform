@@ -161,6 +161,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
   const [importJson, setImportJson] = useState('');
   const [availableScenarios, setAvailableScenarios] = useState<any[]>([]);
   const [editingScenarioId, setEditingScenarioId] = useState<string | null>(null);
+  const [jsonEditorVisible, setJsonEditorVisible] = useState(false);
+  const [jsonContent, setJsonContent] = useState('');
 
   useEffect(() => {
     loadAvailableScenarios();
@@ -212,18 +214,133 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
     message.success('Узел удален');
   };
 
+  const openJsonEditor = () => {
+    const scenarioJson = {
+      name: scenarioName,
+      description: scenarioDescription,
+      version: "1.0",
+      language: "uk",
+      category: "general",
+      tags: [],
+      is_active: true,
+      is_entry_point: editingScenarioId === 'greeting-001',
+      scenario_data: {
+        start_node: nodes.length > 0 ? nodes[0].id : "start",
+        nodes: nodes.map(node => ({
+          id: node.id,
+          type: node.data.type,
+          parameters: {
+            message: node.data.content,
+            question: node.data.content,
+            conditions: node.data.conditions,
+            url: node.data.url,
+            method: node.data.method,
+            prompt: node.data.prompt,
+            target_scenario: node.data.target_scenario
+          },
+          next_nodes: edges.filter(edge => edge.source === node.id).map(edge => edge.target),
+          position: node.position
+        })),
+        edges: edges.map(edge => ({
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle
+        }))
+      }
+    };
+    setJsonContent(JSON.stringify(scenarioJson, null, 2));
+    setJsonEditorVisible(true);
+  };
+
+  const saveFromJson = async () => {
+    try {
+      const scenarioData = JSON.parse(jsonContent);
+      
+      // Обновляем визуальный редактор
+      setScenarioName(scenarioData.name);
+      setScenarioDescription(scenarioData.description);
+      
+      // Конвертируем узлы
+      const loadedNodes = scenarioData.scenario_data.nodes.map((node: any) => ({
+        id: node.id,
+        type: 'custom',
+        position: node.position || { x: Math.random() * 300, y: Math.random() * 300 },
+        data: {
+          type: node.type,
+          content: node.parameters?.message || node.parameters?.question || 'Узел',
+          conditions: node.parameters?.conditions,
+          url: node.parameters?.url,
+          method: node.parameters?.method,
+          prompt: node.parameters?.prompt,
+          target_scenario: node.parameters?.target_scenario
+        }
+      }));
+      
+      // Конвертируем связи
+      const loadedEdges = scenarioData.scenario_data.edges?.map((edge: any) => ({
+        id: `${edge.source}-${edge.target}`,
+        source: edge.source,
+        target: edge.target,
+        type: 'smoothstep',
+        animated: true
+      })) || [];
+      
+      setNodes(loadedNodes);
+      setEdges(loadedEdges);
+      
+      // Сохраняем сценарий
+      if (editingScenarioId) {
+        await scenarioService.updateScenario(editingScenarioId, scenarioData);
+        message.success('Сценарий обновлен из JSON');
+      } else {
+        await scenarioService.createScenario(scenarioData);
+        message.success('Сценарий создан из JSON');
+      }
+      
+      setJsonEditorVisible(false);
+      onScenarioSaved?.();
+    } catch (error) {
+      message.error('Ошибка в JSON формате');
+      console.error('JSON parse error:', error);
+    }
+  };
+
   const addNode = () => {
+    const nodeTypeLabels = {
+      'announce': 'Анонс',
+      'ask': 'Вопрос', 
+      'api_call': 'API запрос',
+      'llm_call': 'LLM запрос',
+      'scenario_jump': 'Переход в сценарий',
+      'transfer': 'Перевод на оператора',
+      'end': 'Завершение диалога',
+      'condition': 'Условие выбора'
+    };
+
     const baseData = { 
       type: selectedNodeType,
-      content: `Новый ${selectedNodeType} узел`
+      content: `Новый ${nodeTypeLabels[selectedNodeType] || selectedNodeType} узел`
     };
     
     // Add specific data for different node types
     let nodeData = baseData;
     if (selectedNodeType === 'condition') {
-      nodeData = { ...baseData, conditions: ['true', 'false'] };
-    } else if (selectedNodeType === 'menu') {
-      nodeData = { ...baseData, options: ['Вариант 1', 'Вариант 2'] };
+      nodeData = { ...baseData, conditions: ['условие 1', 'условие 2'], content: 'Условие выбора' };
+    } else if (selectedNodeType === 'api_call') {
+      nodeData = { ...baseData, url: 'https://api.example.com', method: 'GET', content: 'API запрос' };
+    } else if (selectedNodeType === 'llm_call') {
+      nodeData = { ...baseData, content: 'Запрос в LLM модель' };
+    } else if (selectedNodeType === 'scenario_jump') {
+      nodeData = { ...baseData, content: 'Переход в другой сценарий' };
+    } else if (selectedNodeType === 'transfer') {
+      nodeData = { ...baseData, content: 'Перевод на оператора' };
+    } else if (selectedNodeType === 'end') {
+      nodeData = { ...baseData, content: 'Завершение диалога' };
+    } else if (selectedNodeType === 'announce') {
+      nodeData = { ...baseData, content: 'Сообщение пользователю' };
+    } else if (selectedNodeType === 'ask') {
+      nodeData = { ...baseData, content: 'Вопрос пользователю' };
     }
 
     const newNode: Node = {
@@ -249,17 +366,20 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       category: 'custom',
       tags: ['визуальный'],
       is_active: true,
+      is_entry_point: editingScenarioId === 'greeting-001', // Сохраняем entry point статус
       scenario_data: {
-        start_node: nodes.find(n => n.data.type === 'message')?.id || nodes[0]?.id,
+        start_node: nodes.length > 0 ? nodes[0].id : 'start',
         nodes: nodes.map(node => ({
-          type: node.data.type,
           id: node.id,
+          type: node.data.type,
           parameters: {
             message: node.data.content,
+            question: node.data.content,
             conditions: node.data.conditions,
-            options: node.data.options,
             url: node.data.url,
-            method: node.data.method
+            method: node.data.method,
+            prompt: node.data.prompt,
+            target_scenario: node.data.target_scenario
           },
           next_nodes: edges
             .filter(edge => edge.source === node.id)
@@ -308,22 +428,36 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
     const exportData = {
       name: scenarioName || 'Визуальный сценарий',
       description: scenarioDescription || 'Экспортированный сценарий',
-      nodes: nodes.map(node => ({
-        id: node.id,
-        type: node.data.type,
-        content: node.data.content,
-        conditions: node.data.conditions,
-        options: node.data.options,
-        url: node.data.url,
-        method: node.data.method,
-        position: node.position
-      })),
-      edges: edges.map(edge => ({
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle,
-        targetHandle: edge.targetHandle
-      }))
+      version: "1.0",
+      language: "uk",
+      category: "general",
+      tags: [],
+      is_active: true,
+      is_entry_point: editingScenarioId === 'greeting-001',
+      scenario_data: {
+        start_node: nodes.length > 0 ? nodes[0].id : "start",
+        nodes: nodes.map(node => ({
+          id: node.id,
+          type: node.data.type,
+          parameters: {
+            message: node.data.content,
+            question: node.data.content,
+            conditions: node.data.conditions,
+            url: node.data.url,
+            method: node.data.method,
+            prompt: node.data.prompt,
+            target_scenario: node.data.target_scenario
+          },
+          next_nodes: edges.filter(edge => edge.source === node.id).map(edge => edge.target),
+          position: node.position
+        })),
+        edges: edges.map(edge => ({
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle
+        }))
+      }
     };
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -340,22 +474,43 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
     try {
       const imported = JSON.parse(importJson);
       
-      // Convert imported data to ReactFlow format
-      const importedNodes = imported.nodes?.map((node: any) => ({
+      // Поддержка как старого, так и нового формата
+      let nodes, edges, name, description;
+      
+      if (imported.scenario_data) {
+        // Новый формат (полный сценарий)
+        nodes = imported.scenario_data.nodes;
+        edges = imported.scenario_data.edges;
+        name = imported.name;
+        description = imported.description;
+      } else {
+        // Старый формат (только узлы и связи)
+        nodes = imported.nodes;
+        edges = imported.edges;
+        name = imported.name;
+        description = imported.description;
+      }
+
+      // Convert imported nodes to ReactFlow format
+      const importedNodes = nodes?.map((node: any, index: number) => ({
         id: node.id,
         type: 'custom',
-        position: node.position || { x: Math.random() * 300, y: Math.random() * 300 },
+        position: node.position || { 
+          x: 100 + (index % 3) * 200, 
+          y: 100 + Math.floor(index / 3) * 150 
+        },
         data: {
           type: node.type,
-          content: node.content,
-          conditions: node.conditions,
-          options: node.options,
-          url: node.url,
-          method: node.method
+          content: node.parameters?.message || node.parameters?.question || node.content || 'Узел',
+          conditions: node.parameters?.conditions || node.conditions,
+          url: node.parameters?.url || node.url,
+          method: node.parameters?.method || node.method,
+          prompt: node.parameters?.prompt || node.prompt,
+          target_scenario: node.parameters?.target_scenario || node.target_scenario
         }
       })) || [];
 
-      const importedEdges = imported.edges?.map((edge: any) => ({
+      const importedEdges = edges?.map((edge: any) => ({
         id: `${edge.source}-${edge.target}`,
         source: edge.source,
         target: edge.target,
@@ -367,8 +522,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
 
       setNodes(importedNodes);
       setEdges(importedEdges);
-      setScenarioName(imported.name || '');
-      setScenarioDescription(imported.description || '');
+      setScenarioName(name || '');
+      setScenarioDescription(description || '');
       setImportModalVisible(false);
       message.success('Сценарий импортирован');
     } catch (error) {
@@ -477,20 +632,28 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
                 conditions: e.target.value.split('\n').filter(Boolean) 
               })}
               rows={4}
-              placeholder="true&#10;false&#10;другое условие"
+              placeholder="условие 1&#10;условие 2&#10;комплексное условие"
             />
           </Form.Item>
         )}
 
-        {data.type === 'menu' && (
-          <Form.Item label="Варианты меню (по одному на строку)">
+        {data.type === 'llm_call' && (
+          <Form.Item label="Промпт для LLM">
             <TextArea
-              value={(data.options || []).join('\n')}
-              onChange={(e) => updateNodeData(selectedNode.id, { 
-                options: e.target.value.split('\n').filter(Boolean) 
-              })}
+              value={data.prompt || ''}
+              onChange={(e) => updateNodeData(selectedNode.id, { prompt: e.target.value })}
               rows={4}
-              placeholder="Вариант 1&#10;Вариант 2&#10;Вариант 3"
+              placeholder="Введите промпт для LLM модели"
+            />
+          </Form.Item>
+        )}
+
+        {data.type === 'scenario_jump' && (
+          <Form.Item label="ID целевого сценария">
+            <Input
+              value={data.target_scenario || ''}
+              onChange={(e) => updateNodeData(selectedNode.id, { target_scenario: e.target.value })}
+              placeholder="scenario-id"
             />
           </Form.Item>
         )}
@@ -540,16 +703,16 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           <Select 
             value={selectedNodeType} 
             onChange={setSelectedNodeType}
-            style={{ width: 120 }}
+            style={{ width: 150 }}
           >
-            <Option value="message">Сообщение</Option>
-            <Option value="input">Ввод</Option>
-            <Option value="condition">Условие</Option>
-            <Option value="api_call">API вызов</Option>
-            <Option value="menu">Меню</Option>
-            <Option value="scenario_jump">Переход</Option>
-            <Option value="transfer">Оператор</Option>
-            <Option value="end">Конец</Option>
+            <Option value="announce">Анонс</Option>
+            <Option value="ask">Вопрос</Option>
+            <Option value="api_call">Запрос в API</Option>
+            <Option value="llm_call">Запрос в LLM</Option>
+            <Option value="scenario_jump">Переход в сценарий</Option>
+            <Option value="transfer">Перевод на оператора</Option>
+            <Option value="end">Завершение диалога</Option>
+            <Option value="condition">Условие выбора</Option>
           </Select>
           <Button type="primary" icon={<PlusOutlined />} onClick={addNode}>
             Добавить узел
@@ -562,6 +725,9 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           </Button>
           <Button type="default" icon={<FolderOpenOutlined />} onClick={() => setLoadModalVisible(true)}>
             Загрузить
+          </Button>
+          <Button type="default" onClick={openJsonEditor}>
+            JSON
           </Button>
           <Button type="default" icon={<ExportOutlined />} onClick={exportScenario}>
             Экспорт
@@ -682,6 +848,24 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
               />
             </List.Item>
           )}
+        />
+      </Modal>
+
+      <Modal
+        title="JSON редактор сценария"
+        open={jsonEditorVisible}
+        onOk={saveFromJson}
+        onCancel={() => setJsonEditorVisible(false)}
+        width={800}
+        okText="Применить"
+        cancelText="Отмена"
+      >
+        <TextArea
+          value={jsonContent}
+          onChange={(e) => setJsonContent(e.target.value)}
+          rows={20}
+          style={{ fontFamily: 'monospace', fontSize: '12px' }}
+          placeholder="JSON структура сценария"
         />
       </Modal>
     </div>
