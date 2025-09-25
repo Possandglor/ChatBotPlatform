@@ -33,6 +33,8 @@ const Testing: React.FC = () => {
       setLoading(true);
       const response = await apiService.createChatSession();
       const newSessionId = response.data.session_id;
+      const initialMessage = response.data.initial_message || 'Привет! Я готов к тестированию. Напишите что-нибудь для начала диалога.';
+      
       setSessionId(newSessionId);
       setMessages([]);
       setContext({});
@@ -40,7 +42,7 @@ const Testing: React.FC = () => {
       const welcomeMessage: Message = {
         id: Date.now().toString(),
         type: 'bot',
-        content: 'Привет! Я готов к тестированию. Напишите что-нибудь для начала диалога.',
+        content: initialMessage,
         timestamp: new Date(),
       };
       setMessages([welcomeMessage]);
