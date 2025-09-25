@@ -80,12 +80,26 @@ const ScenarioEditor: React.FC<ScenarioEditorProps> = ({ editingScenario, onScen
   };
 
   const updateNode = (nodeId: string, updates: Partial<ScenarioNode>) => {
-    setCurrentScenario(prev => ({
-      ...prev,
-      nodes: prev.nodes.map(node => 
+    setCurrentScenario(prev => {
+      let updatedNodes = prev.nodes.map(node => 
         node.id === nodeId ? { ...node, ...updates } : node
-      )
-    }));
+      );
+
+      // Если изменяется ID узла, обновляем все ссылки на него
+      if (updates.id && updates.id !== nodeId) {
+        updatedNodes = updatedNodes.map(node => ({
+          ...node,
+          next_nodes: node.next_nodes?.map(nextId => 
+            nextId === nodeId ? updates.id! : nextId
+          ) || []
+        }));
+      }
+
+      return {
+        ...prev,
+        nodes: updatedNodes
+      };
+    });
   };
 
   const deleteNode = (nodeId: string) => {
@@ -157,6 +171,18 @@ const ScenarioEditor: React.FC<ScenarioEditorProps> = ({ editingScenario, onScen
       }}
       onClick={() => setSelectedNodeId(node.id)}
     >
+      {/* ID узла - редактируемое поле */}
+      <div style={{ marginBottom: 8 }}>
+        <label style={{ fontSize: '12px', color: '#666' }}>ID узла:</label>
+        <Input
+          size="small"
+          placeholder="Уникальный ID узла"
+          value={node.id}
+          onChange={(e) => updateNode(node.id, { id: e.target.value })}
+          style={{ marginTop: 4 }}
+        />
+      </div>
+
       {node.type === 'message' && (
         <TextArea
           placeholder="Текст сообщения"

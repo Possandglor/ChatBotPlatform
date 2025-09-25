@@ -22,4 +22,19 @@ public interface ScenarioServiceClient {
     @GET
     @Path("/default")
     Map<String, Object> getDefaultScenario();
+    
+    @GET
+    @Path("/entry-point")
+    Map<String, Object> getEntryPointScenario();
+    
+    @DELETE
+    @Path("/{id}")
+    Map<String, Object> deleteScenario(@PathParam("id") String id);
+    
+    @POST
+    Map<String, Object> createScenario(Map<String, Object> scenario);
+    
+    @PUT
+    @Path("/{id}")
+    Map<String, Object> updateScenario(@PathParam("id") String id, Map<String, Object> scenario);
 }

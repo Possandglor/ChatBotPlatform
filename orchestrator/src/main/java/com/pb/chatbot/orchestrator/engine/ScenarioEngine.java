@@ -45,6 +45,8 @@ public class ScenarioEngine {
                 return executeCondition(block, context, scenario);
             case "wait":
                 return executeWait(block, context);
+            case "nlu-request":
+                return executeNluRequest(block, userInput, context, scenario);
             default:
                 return createErrorResponse("Unknown block type: " + block.type);
         }
@@ -73,15 +75,20 @@ public class ScenarioEngine {
     }
     
     private Map<String, Object> executeAsk(ScenarioBlock block, Map<String, Object> context) {
-        String question = (String) block.parameters.get("question");
-        String inputType = (String) block.parameters.getOrDefault("inputType", "text");
-        Boolean required = (Boolean) block.parameters.getOrDefault("required", false);
+        String question = "Введите ответ:";
+        if (block.parameters != null && block.parameters.containsKey("question")) {
+            question = (String) block.parameters.get("question");
+        }
         
         context.put("waiting_for_input", true);
-        context.put("input_type", inputType);
-        context.put("required", required);
+        context.put("input_type", "text");
+        context.put("required", true);
         
-        return createResponse("ask", question, block.id, context);
+        // ВАЖНО: устанавливаем следующий узел для обработки ответа пользователя
+        String nextNodeId = getNextNode(block);
+        context.put("current_node", nextNodeId);
+        
+        return createResponse("ask", question, nextNodeId, context);
     }
     
     private Map<String, Object> executeParse(ScenarioBlock block, String userInput, Map<String, Object> context) {
@@ -168,6 +175,17 @@ public class ScenarioEngine {
                block.nextNodes.get(0) : null;
     }
     
+    private ScenarioBlock findBlockById(Scenario scenario, String blockId) {
+        if (scenario.nodes != null) {
+            for (ScenarioBlock block : scenario.nodes) {
+                if (blockId.equals(block.id)) {
+                    return block;
+                }
+            }
+        }
+        return null;
+    }
+    
     private Map<String, Object> createResponse(String type, String message, String nextNode, Map<String, Object> context) {
         Map<String, Object> response = new HashMap<>();
         response.put("type", type);
@@ -176,6 +194,50 @@ public class ScenarioEngine {
         response.put("context", context);
         response.put("timestamp", System.currentTimeMillis());
         return response;
+    }
+    
+    private Map<String, Object> executeNluRequest(ScenarioBlock block, String userInput, 
+                                                 Map<String, Object> context, Scenario scenario) {
+        LOG.debugf("Executing NLU request for input: %s", userInput);
+        
+        // Простое определение интентов по ключевым словам
+        String intent = "unknown";
+        if (userInput != null && userInput.toLowerCase().contains("баланс")) {
+            intent = "check_balance";
+        } else if (userInput != null && userInput.toLowerCase().contains("карт")) {
+            intent = "card_info";
+        } else if (userInput != null && userInput.toLowerCase().contains("перевод")) {
+            intent = "transfer";
+        }
+        
+        // Сохраняем результаты в контекст
+        context.put("intent", intent);
+        context.put("entities", new java.util.ArrayList<>());
+        context.put("confidence", 0.8);
+        
+        LOG.debugf("NLU analysis completed. Intent: %s", intent);
+        
+        // Переходим к следующему узлу через success условие
+        String nextNodeId = null;
+        if (block.conditions != null && block.conditions.containsKey("success")) {
+            nextNodeId = (String) block.conditions.get("success");
+        }
+        if (nextNodeId == null) {
+            nextNodeId = getNextNode(block);
+        }
+        
+        context.put("current_node", nextNodeId);
+        
+        // ВАЖНО: Сразу выполняем следующий узел
+        if (nextNodeId != null) {
+            ScenarioBlock nextBlock = findBlockById(scenario, nextNodeId);
+            if (nextBlock != null) {
+                LOG.debugf("Continuing to next node after NLU: %s (%s)", nextNodeId, nextBlock.type);
+                return executeBlock(nextBlock, userInput, context, scenario);
+            }
+        }
+        
+        return createResponse("nlu-request", "NLU analysis completed", nextNodeId, context);
     }
     
     private Map<String, Object> createErrorResponse(String error) {

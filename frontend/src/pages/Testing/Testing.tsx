@@ -32,8 +32,9 @@ const Testing: React.FC = () => {
     try {
       setLoading(true);
       const response = await apiService.createChatSession();
-      const newSessionId = response.data.session_id;
-      const initialMessage = response.data.initial_message || 'Привет! Я готов к тестированию. Напишите что-нибудь для начала диалога.';
+      const newSessionId = (response.data as any).session_id;
+      const initialMessage = (response.data as any).initial_message || 'Привет! Я готов к тестированию. Напишите что-нибудь для начала диалога.';
+      const nodeType = (response.data as any).node_type;
       
       setSessionId(newSessionId);
       setMessages([]);
@@ -46,6 +47,11 @@ const Testing: React.FC = () => {
         timestamp: new Date(),
       };
       setMessages([welcomeMessage]);
+      
+      // Если это announce - автоматически продолжаем
+      if (nodeType === 'announce') {
+        setTimeout(() => continueSession(newSessionId), 500);
+      }
     } catch (error) {
       const mockSessionId = `test-session-${Date.now()}`;
       setSessionId(mockSessionId);
@@ -57,6 +63,35 @@ const Testing: React.FC = () => {
       }]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const continueSession = async (sessionId: string) => {
+    try {
+      const response = await apiService.continueSession(sessionId);
+      const botResponse = (response.data as any).bot_response;
+      const nodeType = (response.data as any).node_type;
+      
+      if (botResponse) {
+        const botMessage: Message = {
+          id: Date.now().toString(),
+          type: 'bot',
+          content: botResponse,
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, botMessage]);
+        
+        // Если это announce - продолжаем автоматически (кроме завершения диалога)
+        if (nodeType === 'announce' && !botResponse.includes('Диалог завершен')) {
+          setTimeout(() => continueSession(sessionId), 500);
+        } else if (nodeType === 'exit' || botResponse.includes('Диалог завершен')) {
+          console.log('Диалог завершен');
+        } else if (nodeType === 'transfer') {
+          console.log('Передача оператору');
+        }
+      }
+    } catch (error) {
+      console.error('Ошибка продолжения сессии:', error);
     }
   };
 
@@ -76,18 +111,29 @@ const Testing: React.FC = () => {
 
     try {
       const response = await apiService.sendMessage(sessionId, inputValue);
+      const botResponse = (response.data as any).bot_response;
+      const nodeType = (response.data as any).node_type;
       
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'bot',
-        content: response.data.bot_response || 'Ответ получен',
+        content: botResponse || 'Ответ получен',
         timestamp: new Date(),
       };
 
       setMessages(prev => [...prev, botMessage]);
       
-      if (response.data.context) {
-        setContext(response.data.context);
+      // Если это announce - автоматически продолжаем (кроме завершения диалога)
+      if (nodeType === 'announce' && !botResponse.includes('Диалог завершен')) {
+        setTimeout(() => continueSession(sessionId), 500);
+      } else if (nodeType === 'exit' || botResponse.includes('Диалог завершен')) {
+        console.log('Диалог завершен');
+      } else if (nodeType === 'transfer') {
+        console.log('Передача оператору');
+      }
+      
+      if ((response.data as any).context) {
+        setContext((response.data as any).context);
       }
     } catch (error) {
       const mockBotMessage: Message = {
@@ -99,7 +145,7 @@ const Testing: React.FC = () => {
       
       setMessages(prev => [...prev, mockBotMessage]);
       
-      setContext(prev => ({
+      setContext((prev: any) => ({
         ...prev,
         last_message: inputValue,
         message_count: (prev.message_count || 0) + 1,

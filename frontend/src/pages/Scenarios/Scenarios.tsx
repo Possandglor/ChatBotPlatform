@@ -70,25 +70,41 @@ const Scenarios: React.FC = () => {
 
   const columns = [
     {
+      title: 'ID сценария',
+      dataIndex: 'id',
+      key: 'id',
+      width: 320,
+      render: (id: string) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all' }}>
+          {id}
+        </span>
+      ),
+    },
+    {
       title: 'Название',
       dataIndex: 'name',
       key: 'name',
+      width: 200,
     },
     {
       title: 'Описание',
       dataIndex: 'description',
       key: 'description',
-      ellipsis: true,
+      width: 300,
+      render: (text: string) => (
+        <span style={{ wordBreak: 'break-word' }}>{text}</span>
+      ),
     },
     {
-      title: 'Интенты',
-      dataIndex: 'trigger_intents',
-      key: 'trigger_intents',
-      render: (intents: string[]) => intents?.join(', ') || '',
+      title: 'Создан',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 150,
+      render: (date: string) => new Date(date).toLocaleDateString('ru-RU'),
     },
     {
-      title: 'Узлов',
-      dataIndex: 'nodes',
+      title: 'Действия',
+      key: 'actions',
       key: 'nodes_count',
       render: (nodes: any[]) => nodes?.length || 0,
     },

@@ -14,7 +14,7 @@ import ReactFlow, {
   EdgeRemoveChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Card, Button, Space, Select, Input, message, Tag, Drawer, Form, Modal, List } from 'antd';
+import { Card, Button, Space, Select, Input, message, Tag, Drawer, Form, Modal, List, Checkbox } from 'antd';
 import { PlusOutlined, SaveOutlined, SettingOutlined, ExportOutlined, ImportOutlined, FolderOpenOutlined, DeleteOutlined } from '@ant-design/icons';
 import { scenarioService } from '../services/scenarioService';
 
@@ -114,7 +114,16 @@ const CustomNode = ({ data, id, selected }: { data: any; id: string; selected: b
         {/* Show conditions/options */}
         {data.type === 'condition' && (
           <div style={{ fontSize: 10 }}>
-            {(data.conditions || ['true', 'false']).map((condition: string, index: number) => (
+            {(() => {
+              const conditions = data.conditions;
+              if (Array.isArray(conditions)) {
+                return conditions;
+              } else if (conditions && typeof conditions === 'object') {
+                return Object.keys(conditions);
+              } else {
+                return ['true', 'false'];
+              }
+            })().map((condition: string, index: number) => (
               <div key={condition} style={{ marginBottom: 2 }}>
                 → {condition}
               </div>
@@ -159,6 +168,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
   const [loadModalVisible, setLoadModalVisible] = useState(false);
   const [scenarioName, setScenarioName] = useState('');
   const [scenarioDescription, setScenarioDescription] = useState('');
+  const [isEntryPoint, setIsEntryPoint] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [availableScenarios, setAvailableScenarios] = useState<any[]>([]);
   const [editingScenarioId, setEditingScenarioId] = useState<string | null>(null);
@@ -225,6 +235,38 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
     }
   };
 
+  const updateNodeId = (oldId: string, newId: string) => {
+    if (!newId || newId === oldId) return;
+    
+    // Обновляем ID узла
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === oldId) {
+          return { ...node, id: newId };
+        }
+        return node;
+      })
+    );
+    
+    // Обновляем все ссылки в edges
+    setEdges((eds) =>
+      eds.map((edge) => ({
+        ...edge,
+        id: edge.id.replace(oldId, newId),
+        source: edge.source === oldId ? newId : edge.source,
+        target: edge.target === oldId ? newId : edge.target,
+      }))
+    );
+    
+    // Обновляем selectedNode
+    if (selectedNode && selectedNode.id === oldId) {
+      setSelectedNode({
+        ...selectedNode,
+        id: newId
+      });
+    }
+  };
+
   const deleteNode = (nodeId: string) => {
     setNodes((nds) => nds.filter((node) => node.id !== nodeId));
     setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
@@ -242,7 +284,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       category: "general",
       tags: [],
       is_active: true,
-      is_entry_point: editingScenarioId === 'greeting-001',
+      is_entry_point: isEntryPoint,
       scenario_data: {
         start_node: nodes.length > 0 ? nodes[0].id : "start",
         nodes: nodes.map(node => ({
@@ -279,6 +321,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       // Обновляем визуальный редактор
       setScenarioName(scenarioData.name);
       setScenarioDescription(scenarioData.description);
+      setIsEntryPoint(scenarioData.is_entry_point || false);
       
       // Конвертируем узлы
       const loadedNodes = scenarioData.scenario_data.nodes.map((node: any) => ({
@@ -388,7 +431,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       category: 'custom',
       tags: ['визуальный'],
       is_active: true,
-      is_entry_point: editingScenarioId === 'greeting-001', // Сохраняем entry point статус
+      is_entry_point: isEntryPoint, // Сохраняем entry point статус
       scenario_data: {
         start_node: nodes.length > 0 ? nodes[0].id : 'start',
         nodes: nodes.map(node => {
@@ -452,6 +495,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       setSaveModalVisible(false);
       setScenarioName('');
       setScenarioDescription('');
+      setIsEntryPoint(false);
       onScenarioSaved?.(); // Вызываем callback для обновления списка
     } catch (error) {
       message.error('Ошибка сохранения сценария');
@@ -463,6 +507,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
     setEdges([]);
     setScenarioName('');
     setScenarioDescription('');
+    setIsEntryPoint(false);
     setSelectedNode(null);
     setEditingScenarioId(null); // Очищаем ID редактируемого сценария
     message.info('Создание нового сценария');
@@ -477,7 +522,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       category: "general",
       tags: [],
       is_active: true,
-      is_entry_point: editingScenarioId === 'greeting-001',
+      is_entry_point: isEntryPoint,
       scenario_data: {
         start_node: nodes.length > 0 ? nodes[0].id : "start",
         nodes: nodes.map(node => ({
@@ -584,6 +629,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
         setEdges([]);
         setScenarioName(scenario.name);
         setScenarioDescription(scenario.description);
+        setIsEntryPoint(scenario.is_entry_point || false);
         setEditingScenarioId(scenario.id);
         setLoadModalVisible(false);
         message.warning(`Сценарий "${scenario.name}" загружен как пустой для редактирования`);
@@ -624,7 +670,9 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
             conditions: node.parameters?.conditions || node.conditions,
             options: node.parameters?.options,
             url: node.parameters?.url,
-            method: node.parameters?.method
+            method: node.parameters?.method,
+            target_scenario: node.parameters?.target_scenario,
+            prompt: node.parameters?.prompt
           }
         };
       });
@@ -664,6 +712,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       setNodes(loadedNodes);
       setScenarioName(scenario.name);
       setScenarioDescription(scenario.description);
+      setIsEntryPoint(scenario.is_entry_point || false);
       setEditingScenarioId(scenario.id); // Устанавливаем ID для редактирования
       setLoadModalVisible(false);
       message.success(`Сценарий "${scenario.name}" загружен`);
@@ -680,6 +729,16 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
 
     return (
       <Form layout="vertical">
+        {/* ID узла - редактируемое поле */}
+        <Form.Item label="ID узла">
+          <Input
+            value={selectedNode.id}
+            onChange={(e) => updateNodeId(selectedNode.id, e.target.value)}
+            placeholder="Уникальный ID узла"
+            style={{ fontFamily: 'monospace' }}
+          />
+        </Form.Item>
+
         <Form.Item label="Содержимое">
           <TextArea
             value={data.content || ''}
@@ -738,13 +797,33 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
         )}
 
         {data.type === 'scenario_jump' && (
-          <Form.Item label="ID целевого сценария">
-            <Input
+          <Form.Item label="Целевой сценарий">
+            <Select
               value={data.target_scenario || ''}
-              onChange={(e) => updateNodeData(selectedNode.id, { target_scenario: e.target.value })}
-              placeholder="scenario-id"
+              onChange={(value) => updateNodeData(selectedNode.id, { target_scenario: value })}
+              placeholder="Выберите сценарий"
+              showSearch
+              filterOption={(input, option) => {
+                const children = option?.children as string;
+                return children?.toLowerCase().includes(input.toLowerCase()) || false;
+              }}
               disabled={false}
-            />
+            >
+              {availableScenarios.map(scenario => (
+                <Select.Option 
+                  key={scenario.id} 
+                  value={scenario.id}
+                  title={`${scenario.name} (${scenario.id})`}
+                >
+                  {scenario.name}
+                </Select.Option>
+              ))}
+            </Select>
+            {data.target_scenario && (
+              <div style={{ marginTop: 4, fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
+                ID: {data.target_scenario}
+              </div>
+            )}
           </Form.Item>
         )}
 
@@ -884,6 +963,14 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
               placeholder="Описание сценария"
               rows={3}
             />
+          </Form.Item>
+          <Form.Item>
+            <Checkbox
+              checked={isEntryPoint}
+              onChange={(e) => setIsEntryPoint(e.target.checked)}
+            >
+              Точка входа (стартовый сценарий)
+            </Checkbox>
           </Form.Item>
         </Form>
       </Modal>

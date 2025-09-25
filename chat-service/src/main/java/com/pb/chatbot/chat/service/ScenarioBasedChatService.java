@@ -67,6 +67,12 @@ public class ScenarioBasedChatService {
         if (nodes != null) {
             for (Map<String, Object> node : nodes) {
                 if (startNode.equals(node.get("id"))) {
+                    // Проверяем поле content (новый формат)
+                    if (node.containsKey("content")) {
+                        state.currentStep = startNode;
+                        return (String) node.get("content");
+                    }
+                    // Fallback к старому формату parameters.message
                     @SuppressWarnings("unchecked")
                     Map<String, Object> parameters = (Map<String, Object>) node.get("parameters");
                     if (parameters != null && parameters.containsKey("message")) {
@@ -168,21 +174,45 @@ public class ScenarioBasedChatService {
         for (Map<String, Object> node : nodes) {
             if (state.currentStep.equals(node.get("id"))) {
                 String nodeType = (String) node.get("type");
-                @SuppressWarnings("unchecked")
-                Map<String, Object> parameters = (Map<String, Object>) node.get("parameters");
                 
-                if ("ask".equals(nodeType) && parameters != null) {
-                    return (String) parameters.get("question");
-                } else if ("announce".equals(nodeType) && parameters != null) {
-                    String message = (String) parameters.get("message");
-                    // Подстановка переменных
-                    if (message != null && message.contains("{last_answer}")) {
-                        String lastAnswer = (String) state.context.get("last_answer");
-                        if (lastAnswer != null) {
-                            message = message.replace("{last_answer}", lastAnswer);
-                        }
+                if ("ask".equals(nodeType)) {
+                    // Проверяем поле content (новый формат)
+                    if (node.containsKey("content")) {
+                        return (String) node.get("content");
                     }
-                    return message;
+                    // Fallback к старому формату
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> parameters = (Map<String, Object>) node.get("parameters");
+                    if (parameters != null) {
+                        return (String) parameters.get("question");
+                    }
+                } else if ("announce".equals(nodeType)) {
+                    // Проверяем поле content (новый формат)
+                    if (node.containsKey("content")) {
+                        String message = (String) node.get("content");
+                        // Подстановка переменных
+                        if (message != null && message.contains("{last_answer}")) {
+                            String lastAnswer = (String) state.context.get("last_answer");
+                            if (lastAnswer != null) {
+                                message = message.replace("{last_answer}", lastAnswer);
+                            }
+                        }
+                        return message;
+                    }
+                    // Fallback к старому формату
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> parameters = (Map<String, Object>) node.get("parameters");
+                    if (parameters != null) {
+                        String message = (String) parameters.get("message");
+                        // Подстановка переменных
+                        if (message != null && message.contains("{last_answer}")) {
+                            String lastAnswer = (String) state.context.get("last_answer");
+                            if (lastAnswer != null) {
+                                message = message.replace("{last_answer}", lastAnswer);
+                            }
+                        }
+                        return message;
+                    }
                 }
             }
         }

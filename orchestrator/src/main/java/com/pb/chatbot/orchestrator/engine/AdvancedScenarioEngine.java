@@ -13,8 +13,10 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @ApplicationScoped
 public class AdvancedScenarioEngine {
@@ -75,6 +77,18 @@ public class AdvancedScenarioEngine {
             case "nlu-request":
                 return executeNluRequest(node, userInput, context, scenario);
                 
+            case "scenario_jump":
+                return executeScenarioJump(node, context, scenario);
+                
+            case "end":
+                return executeEnd(node, context, scenario);
+                
+            case "transfer":
+                return executeTransfer(node, context, scenario);
+                
+            case "llm_call":
+                return executeLlmCall(node, context, scenario);
+                
             case "sub-flow":
                 return executeSubFlow(node, context, scenario);
                 
@@ -111,6 +125,9 @@ public class AdvancedScenarioEngine {
         // Устанавливаем флаг ожидания ввода
         context.put("waiting_for_input", true);
         context.put("expected_input_type", inputType);
+        
+        // НОВОЕ: Сохраняем ID узла для которого ожидается ответ
+        context.put("waiting_for_answer_to_node", node.id);
         
         String nextNode = getNextNode(node, context);
         updateContext(context, nextNode);
@@ -153,46 +170,85 @@ public class AdvancedScenarioEngine {
     
     // 🔀 CONDITION - Условное ветвление
     private Map<String, Object> executeCondition(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
-        String condition = (String) node.parameters.get("condition");
-        
-        // Вычисляем условие
-        boolean conditionResult = evaluateCondition(condition, context);
-        
-        String nextNode;
-        if (conditionResult) {
-            nextNode = (String) node.conditions.get("true");
-        } else {
-            nextNode = (String) node.conditions.get("false");
+        // ИСПРАВЛЕНО: Проверяем наличие conditions и parameters
+        if (node.conditions == null && node.parameters == null) {
+            LOG.errorf("Condition node %s has no conditions or parameters", node.id);
+            return createResponse("condition", "Ошибка конфигурации условия", null, context);
         }
         
-        // Если нет true/false, ищем по значению переменной
-        if (nextNode == null) {
-            String conditionValue = getConditionValue(condition, context);
-            nextNode = (String) node.conditions.get(conditionValue);
+        String nextNode = null;
+        
+        // Если есть conditions на верхнем уровне (старый формат)
+        if (node.conditions != null) {
+            String condition = (String) node.parameters.get("condition");
+            boolean conditionResult = evaluateCondition(condition, context);
+            
+            if (conditionResult) {
+                nextNode = (String) node.conditions.get("true");
+            } else {
+                nextNode = (String) node.conditions.get("false");
+            }
+            
+            if (nextNode == null) {
+                String conditionValue = getConditionValue(condition, context);
+                nextNode = (String) node.conditions.get(conditionValue);
+            }
+            
+            if (nextNode == null) {
+                nextNode = (String) node.conditions.get("default");
+            }
+        } 
+        // Новый формат: conditions в parameters + next_nodes
+        else if (node.parameters != null && node.parameters.containsKey("conditions")) {
+            @SuppressWarnings("unchecked")
+            List<String> conditions = (List<String>) node.parameters.get("conditions");
+            
+            if (conditions != null && !conditions.isEmpty()) {
+                // Проверяем каждое условие по порядку
+                for (int i = 0; i < conditions.size(); i++) {
+                    String condition = conditions.get(i);
+                    boolean conditionResult = evaluateCondition(condition, context);
+                    
+                    if (conditionResult && node.nextNodes != null && i < node.nextNodes.size()) {
+                        nextNode = node.nextNodes.get(i);
+                        break;
+                    }
+                }
+                
+                // Если ни одно условие не сработало, берем последний next_node как default
+                if (nextNode == null && node.nextNodes != null && !node.nextNodes.isEmpty()) {
+                    nextNode = node.nextNodes.get(node.nextNodes.size() - 1);
+                }
+            }
         }
         
         if (nextNode == null) {
-            nextNode = (String) node.conditions.get("default");
+            nextNode = getNextNode(node, context);
         }
         
         updateContext(context, nextNode);
         
-        // Сразу выполняем следующий узел вместо возврата технического сообщения
+        // ИСПРАВЛЕНО: Condition узел работает под капотом - сразу выполняем следующий узел
         if (nextNode != null) {
             ScenarioBlock nextNodeBlock = findNodeById(scenario, nextNode);
             if (nextNodeBlock != null) {
+                // Используем пустую строку для userInput т.к. condition узел не обрабатывает пользовательский ввод
                 return executeNodeByType(nextNodeBlock, "", context, scenario);
             }
         }
         
-        return createResponse("condition", "Condition evaluated", nextNode, context);
+        // Fallback если узел не найден
+        return createResponse("condition", "Ошибка: следующий узел не найден", null, context);
     }
     
     // 🧠 NLU-REQUEST - Анализ текста через NLU Service
     private Map<String, Object> executeNluRequest(ScenarioBlock node, String userInput,
                                                  Map<String, Object> context, Scenario scenario) {
-        String service = (String) node.parameters.getOrDefault("service", "nlu-service");
-        String endpoint = (String) node.parameters.getOrDefault("endpoint", "/api/v1/nlu/analyze");
+        // Получаем service и endpoint из parameters или используем значения по умолчанию
+        String service = node.parameters != null ? 
+            (String) node.parameters.getOrDefault("service", "nlu-service") : "nlu-service";
+        String endpoint = node.parameters != null ? 
+            (String) node.parameters.getOrDefault("endpoint", "/api/v1/nlu/analyze") : "/api/v1/nlu/analyze";
         
         LOG.infof("Making NLU request for text: %s", userInput);
         
@@ -228,19 +284,30 @@ public class AdvancedScenarioEngine {
                 LOG.infof("NLU analysis completed: intent=%s, confidence=%s", 
                     nluResponse.get("intent"), nluResponse.get("confidence"));
                 
+                // ОТЛАДКА: Проверяем conditions
+                LOG.infof("NLU node conditions: %s", node.conditions);
+                
                 String nextNode = (String) node.conditions.get("success");
+                LOG.infof("NLU nextNode from conditions.success: %s", nextNode);
+                
                 if (nextNode == null) {
                     nextNode = getNextNode(node, context);
+                    LOG.infof("NLU nextNode from getNextNode: %s", nextNode);
                 }
                 
                 updateContext(context, nextNode);
                 
-                // Сразу выполняем следующий узел
+                // ИСПРАВЛЕНО: Сразу выполняем следующий узел (как было раньше)
                 if (nextNode != null) {
                     ScenarioBlock nextNodeBlock = findNodeById(scenario, nextNode);
                     if (nextNodeBlock != null) {
+                        LOG.infof("NLU executing next node: %s (type: %s)", nextNodeBlock.id, nextNodeBlock.type);
                         return executeNodeByType(nextNodeBlock, userInput, context, scenario);
+                    } else {
+                        LOG.errorf("NLU next node not found: %s", nextNode);
                     }
+                } else {
+                    LOG.errorf("NLU nextNode is null!");
                 }
                 
                 return createResponse("nlu-request", "NLU analysis completed", nextNode, context);
@@ -388,25 +455,201 @@ public class AdvancedScenarioEngine {
         }
     }
     
-    // 🔄 SUB-FLOW - Переход в подсценарий
-    private Map<String, Object> executeSubFlow(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
-        String subScenarioId = (String) node.parameters.get("scenario_id");
-        boolean inheritContext = (Boolean) node.parameters.getOrDefault("inherit_context", true);
+    // 🚀 SCENARIO_JUMP - Переход в другой сценарий
+    private Map<String, Object> executeScenarioJump(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
+        String targetScenarioId = null;
         
-        LOG.infof("Executing sub-flow: %s", subScenarioId);
-        
-        // Здесь должна быть логика загрузки и выполнения подсценария
-        // Пока заглушка
-        context.put("sub_flow_executed", subScenarioId);
-        
-        String nextNode = (String) node.conditions.get("completed");
-        if (nextNode == null) {
-            nextNode = getNextNode(node, context);
+        // Получаем ID целевого сценария из parameters
+        if (node.parameters != null) {
+            targetScenarioId = (String) node.parameters.get("target_scenario");
         }
         
+        if (targetScenarioId == null || targetScenarioId.isEmpty()) {
+            LOG.errorf("Scenario jump node %s has no target_scenario", node.id);
+            return createResponse("scenario_jump", "Ошибка: не указан целевой сценарий", null, context);
+        }
+        
+        LOG.infof("Jumping to scenario: %s", targetScenarioId);
+        
+        try {
+            // Загружаем новый сценарий
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(getScenarioServiceUrl() + "/api/v1/scenarios/" + targetScenarioId))
+                .header("Content-Type", "application/json")
+                .GET()
+                .build();
+            
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() == 200) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> scenarioResponse = objectMapper.readValue(response.body(), Map.class);
+                
+                @SuppressWarnings("unchecked")
+                Map<String, Object> scenarioData = (Map<String, Object>) scenarioResponse.get("scenario_data");
+                
+                if (scenarioData != null) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> nodes = (List<Map<String, Object>>) scenarioData.get("nodes");
+                    
+                    // ИСПРАВЛЕНО: Используем ту же логику что и при запуске - findRealStartNode
+                    String realStartNode = findRealStartNode(nodes, scenarioResponse);
+                    
+                    Scenario newScenario = convertMapToScenario(scenarioData);
+                    
+                    // Обновляем контекст для нового сценария
+                    context.put("scenario_id", targetScenarioId);
+                    context.put("current_node", realStartNode);
+                    context.put("scenario_completed", false);
+                    
+                    // ИСПРАВЛЕНО: Сразу выполняем реальный стартовый узел нового сценария
+                    ScenarioBlock startNode = findNodeById(newScenario, realStartNode);
+                    if (startNode != null) {
+                        LOG.infof("Executing real start node of new scenario: %s (type: %s)", realStartNode, startNode.type);
+                        return executeNodeByType(startNode, "", context, newScenario);
+                    }
+                }
+            }
+            
+            LOG.errorf("Failed to load target scenario: %s", targetScenarioId);
+            return createResponse("scenario_jump", "Ошибка загрузки сценария", null, context);
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Error during scenario jump: %s", e.getMessage());
+            return createResponse("scenario_jump", "Ошибка перехода в сценарий", null, context);
+        }
+    }
+    
+    // 🏁 END - Завершение диалога
+    private Map<String, Object> executeEnd(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
+        LOG.infof("Ending dialog");
+        
+        context.put("scenario_completed", true);
+        context.put("dialog_ended", true);
+        
+        String message = "Диалог завершен.";
+        if (node.parameters != null) {
+            message = (String) node.parameters.getOrDefault("message", message);
+        }
+        
+        return createResponse("end", message, null, context);
+    }
+    
+    // 👤 TRANSFER - Перевод на оператора
+    private Map<String, Object> executeTransfer(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
+        LOG.infof("Transferring to operator");
+        
+        context.put("transferred_to_operator", true);
+        context.put("scenario_completed", true);
+        
+        String message = "Переводим вас на оператора...";
+        if (node.parameters != null) {
+            message = (String) node.parameters.getOrDefault("message", message);
+        }
+        
+        return createResponse("transfer", message, null, context);
+    }
+    
+    // 🤖 LLM_CALL - Запрос к LLM модели
+    private Map<String, Object> executeLlmCall(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
+        LOG.infof("Executing LLM call");
+        
+        String prompt = "Ответьте на вопрос пользователя";
+        if (node.parameters != null) {
+            prompt = (String) node.parameters.getOrDefault("prompt", prompt);
+        }
+        
+        // Заглушка для LLM вызова
+        context.put("llm_response", "Ответ от LLM модели");
+        
+        String nextNode = getNextNode(node, context);
         updateContext(context, nextNode);
         
-        return createResponse("sub-flow", "Sub-flow completed", nextNode, context);
+        // Системный узел - сразу выполняем следующий
+        if (nextNode != null) {
+            ScenarioBlock nextNodeBlock = findNodeById(scenario, nextNode);
+            if (nextNodeBlock != null) {
+                return executeNodeByType(nextNodeBlock, "", context, scenario);
+            }
+        }
+        
+        return createResponse("llm_call", "LLM запрос выполнен", nextNode, context);
+    }
+    
+    // 🔄 SUB-FLOW - Переход в подсценарий с возвратом
+    private Map<String, Object> executeSubFlow(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
+        String subScenarioId = null;
+        
+        // Получаем ID подсценария из parameters
+        if (node.parameters != null) {
+            subScenarioId = (String) node.parameters.get("target_scenario");
+        }
+        
+        if (subScenarioId == null || subScenarioId.isEmpty()) {
+            LOG.errorf("Sub-flow node %s has no target_scenario", node.id);
+            return createResponse("sub-flow", "Ошибка: не указан подсценарий", null, context);
+        }
+        
+        LOG.infof("Starting sub-flow: %s", subScenarioId);
+        
+        try {
+            // Загружаем подсценарий
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(getScenarioServiceUrl() + "/api/v1/scenarios/" + subScenarioId))
+                .header("Content-Type", "application/json")
+                .GET()
+                .build();
+            
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() == 200) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> scenarioResponse = objectMapper.readValue(response.body(), Map.class);
+                
+                @SuppressWarnings("unchecked")
+                Map<String, Object> scenarioData = (Map<String, Object>) scenarioResponse.get("scenario_data");
+                
+                if (scenarioData != null) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> nodes = (List<Map<String, Object>>) scenarioData.get("nodes");
+                    
+                    String realStartNode = findRealStartNode(nodes, scenarioResponse);
+                    Scenario subScenario = convertMapToScenario(scenarioData);
+                    
+                    // КЛЮЧЕВОЕ ОТЛИЧИЕ: Сохраняем стек вызовов для возврата
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> callStack = (List<Map<String, Object>>) context.getOrDefault("call_stack", new ArrayList<>());
+                    
+                    // Добавляем текущий контекст в стек
+                    Map<String, Object> returnContext = new HashMap<>();
+                    returnContext.put("scenario_id", context.get("scenario_id"));
+                    returnContext.put("node_id", node.id);
+                    returnContext.put("next_node", getNextNode(node, context));
+                    
+                    callStack.add(returnContext);
+                    
+                    // Обновляем контекст для подсценария
+                    context.put("scenario_id", subScenarioId);
+                    context.put("current_node", realStartNode);
+                    context.put("call_stack", callStack);
+                    context.put("in_sub_flow", true);
+                    
+                    // Выполняем стартовый узел подсценария
+                    ScenarioBlock startNode = findNodeById(subScenario, realStartNode);
+                    if (startNode != null) {
+                        LOG.infof("Executing sub-flow start node: %s (type: %s)", realStartNode, startNode.type);
+                        return executeNodeByType(startNode, "", context, subScenario);
+                    }
+                }
+            }
+            
+            LOG.errorf("Failed to load sub-scenario: %s", subScenarioId);
+            return createResponse("sub-flow", "Ошибка загрузки подсценария", null, context);
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Error during sub-flow: %s", e.getMessage());
+            return createResponse("sub-flow", "Ошибка выполнения подсценария", null, context);
+        }
     }
     
     // 📧 NOTIFICATION - Отправка уведомлений
@@ -458,6 +701,33 @@ public class AdvancedScenarioEngine {
             .orElse(null);
     }
     
+    private Scenario convertMapToScenario(Map<String, Object> scenarioData) {
+        Scenario scenario = new Scenario();
+        scenario.id = (String) scenarioData.get("id");
+        scenario.name = (String) scenarioData.get("name");
+        scenario.version = (String) scenarioData.get("version");
+        scenario.language = (String) scenarioData.getOrDefault("language", "uk");
+        scenario.startNode = (String) scenarioData.get("start_node");
+        
+        // Конвертируем узлы
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> nodesList = (List<Map<String, Object>>) scenarioData.get("nodes");
+        if (nodesList != null) {
+            scenario.nodes = new ArrayList<>();
+            for (Map<String, Object> nodeMap : nodesList) {
+                ScenarioBlock block = new ScenarioBlock();
+                block.id = (String) nodeMap.get("id");
+                block.type = (String) nodeMap.get("type");
+                block.parameters = (Map<String, Object>) nodeMap.get("parameters");
+                block.nextNodes = (List<String>) nodeMap.get("next_nodes");
+                block.conditions = (Map<String, String>) nodeMap.get("conditions");
+                scenario.nodes.add(block);
+            }
+        }
+        
+        return scenario;
+    }
+    
     private String getNextNode(ScenarioBlock node, Map<String, Object> context) {
         if (node.nextNodes != null && !node.nextNodes.isEmpty()) {
             return node.nextNodes.get(0);
@@ -466,7 +736,14 @@ public class AdvancedScenarioEngine {
     }
     
     private void updateContext(Map<String, Object> context, String nextNode) {
-        context.put("current_node", nextNode);
+        if (nextNode == null) {
+            // ИСПРАВЛЕНО: При завершении сценария устанавливаем флаг завершения
+            context.put("current_node", "");
+            context.put("scenario_completed", true);
+        } else {
+            context.put("current_node", nextNode);
+            context.put("scenario_completed", false);
+        }
         context.put("last_execution_time", System.currentTimeMillis());
     }
     
@@ -538,20 +815,74 @@ public class AdvancedScenarioEngine {
     private boolean evaluateCondition(String condition, Map<String, Object> context) {
         if (condition == null) return true;
         
-        // Простая реализация условий
-        if (condition.contains("context.operation")) {
-            return context.containsKey("operation");
-        }
+        LOG.infof("Evaluating condition: %s", condition);
+        LOG.infof("Context intent: %s", context.get("intent"));
         
-        if (condition.contains("context.wantsBalance == true")) {
-            return Boolean.TRUE.equals(context.get("wantsBalance"));
+        try {
+            // ИСПРАВЛЕНО: Универсальная обработка условий
+            
+            // Обработка равенства строк: context.intent == "value" или intent == "value"
+            if (condition.contains("==")) {
+                String[] parts = condition.split("==");
+                if (parts.length == 2) {
+                    String leftPart = parts[0].trim();
+                    String rightPart = parts[1].trim().replace("\"", "");
+                    
+                    // Убираем context. если есть
+                    if (leftPart.startsWith("context.")) {
+                        leftPart = leftPart.substring(8);
+                    }
+                    
+                    Object contextValue = context.get(leftPart);
+                    String contextValueStr = contextValue != null ? contextValue.toString() : "";
+                    
+                    boolean result = contextValueStr.equals(rightPart);
+                    LOG.infof("Condition %s: %s == %s -> %s", condition, contextValueStr, rightPart, result);
+                    return result;
+                }
+            }
+            
+            // Обработка неравенства: context.intent != "value" или intent != "value"
+            if (condition.contains("!=")) {
+                String[] parts = condition.split("!=");
+                if (parts.length == 2) {
+                    String leftPart = parts[0].trim();
+                    String rightPart = parts[1].trim().replace("\"", "");
+                    
+                    // Убираем context. если есть
+                    if (leftPart.startsWith("context.")) {
+                        leftPart = leftPart.substring(8);
+                    }
+                    
+                    Object contextValue = context.get(leftPart);
+                    String contextValueStr = contextValue != null ? contextValue.toString() : "";
+                    
+                    boolean result = !contextValueStr.equals(rightPart);
+                    LOG.infof("Condition %s: %s != %s -> %s", condition, contextValueStr, rightPart, result);
+                    return result;
+                }
+            }
+            
+            // Старые хардкодные условия для совместимости
+            if (condition.contains("context.operation")) {
+                return context.containsKey("operation");
+            }
+            
+            if (condition.contains("context.wantsBalance == true")) {
+                return Boolean.TRUE.equals(context.get("wantsBalance"));
+            }
+            
+            if (condition.contains("context.validCard == true")) {
+                return Boolean.TRUE.equals(context.get("validCard"));
+            }
+            
+            LOG.warnf("Unknown condition format: %s", condition);
+            return false;
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Error evaluating condition: %s", condition);
+            return false;
         }
-        
-        if (condition.contains("context.validCard == true")) {
-            return Boolean.TRUE.equals(context.get("validCard"));
-        }
-        
-        return true;
     }
     
     private String getConditionValue(String condition, Map<String, Object> context) {
@@ -633,6 +964,9 @@ public class AdvancedScenarioEngine {
     }
     
     private Map<String, Object> createResponse(String type, String message, String nextNode, Map<String, Object> context) {
+        // ИСПРАВЛЕНО: Устанавливаем node_type в контекст для правильного отображения
+        context.put("node_type", type);
+        
         Map<String, Object> response = new HashMap<>();
         response.put("type", type);
         response.put("message", message);
@@ -644,6 +978,10 @@ public class AdvancedScenarioEngine {
     
     private String getNluServiceUrl() {
         return "http://localhost:8098"; // NLU Service URL
+    }
+    
+    private String getScenarioServiceUrl() {
+        return "http://localhost:8093"; // Scenario Service URL
     }
     
     private Map<String, Object> parseNluResponse(String responseBody) {
@@ -724,5 +1062,331 @@ public class AdvancedScenarioEngine {
         response.put("message", error);
         response.put("timestamp", System.currentTimeMillis());
         return response;
+    }
+    
+    public String processMessage(String sessionId, String userMessage, Map<String, Object> context) {
+        try {
+            LOG.infof("Processing message for session %s: %s", sessionId, userMessage);
+            
+            // Получаем текущий узел из контекста
+            String currentNodeId = (String) context.get("current_node");
+            String scenarioId = (String) context.get("scenario_id");
+            
+            LOG.infof("Current context - nodeId: %s, scenarioId: %s", currentNodeId, scenarioId);
+            
+            if (currentNodeId == null || scenarioId == null) {
+                LOG.errorf("Session not initialized - nodeId: %s, scenarioId: %s", currentNodeId, scenarioId);
+                return "Ошибка: сессия не инициализирована";
+            }
+            
+            // Продолжаем выполнение сценария с текущего узла
+            return continueScenarioExecution(sessionId, userMessage, context, scenarioId, currentNodeId);
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Error processing message in scenario engine");
+            return "Извините, произошла ошибка при обработке сообщения.";
+        }
+    }
+    
+    private String continueScenarioExecution(String sessionId, String userMessage, Map<String, Object> context, String scenarioId, String currentNodeId) {
+        try {
+            // Загружаем сценарий
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:8093/api/v1/scenarios/" + scenarioId))
+                .header("Content-Type", "application/json")
+                .GET()
+                .build();
+            
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() == 200) {
+                ObjectMapper mapper = new ObjectMapper();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> scenarioResponse = mapper.readValue(response.body(), Map.class);
+                
+                // Извлекаем scenario_data
+                @SuppressWarnings("unchecked")
+                Map<String, Object> scenarioData = (Map<String, Object>) scenarioResponse.get("scenario_data");
+                if (scenarioData == null) {
+                    return "Ошибка: некорректные данные сценария";
+                }
+                
+                // Конвертируем в Scenario объект
+                Scenario scenario = convertMapToScenario(scenarioData);
+                
+                context.put("user_message", userMessage);
+                
+                // ИСПРАВЛЕНО: Используем новую логику вместо старой executeNodesSequentially
+                ScenarioBlock currentNode = findNodeById(scenario, currentNodeId);
+                if (currentNode != null) {
+                    LOG.infof("Executing node %s (%s) with user input: %s", currentNodeId, currentNode.type, userMessage);
+                    Map<String, Object> result = executeNodeByType(currentNode, userMessage, context, scenario);
+                    return (String) result.getOrDefault("message", "Узел выполнен");
+                } else {
+                    LOG.errorf("Node not found: %s", currentNodeId);
+                    return "Узел не найден: " + currentNodeId;
+                }
+            }
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to continue scenario execution");
+        }
+        
+        return "Ошибка выполнения сценария.";
+    }
+    
+    private String executeNodesSequentially(Map<String, Object> scenarioData, String startNodeId, Map<String, Object> context) {
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) scenarioData.get("scenario_data");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
+            
+            // Находим текущий узел
+            Map<String, Object> node = findNodeById(nodes, startNodeId);
+            if (node == null) {
+                return "Узел не найден.";
+            }
+            
+            String type = (String) node.get("type");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> parameters = (Map<String, Object>) node.get("parameters");
+            @SuppressWarnings("unchecked")
+            List<String> nextNodes = (List<String>) node.get("next_nodes");
+            
+            if ("ask".equals(type)) {
+                // Узел требует ввода пользователя
+                String question = (String) parameters.get("question");
+                
+                // Переходим к следующему узлу для следующего сообщения пользователя
+                if (nextNodes != null && !nextNodes.isEmpty()) {
+                    context.put("current_node", nextNodes.get(0));
+                } else {
+                    context.put("current_node", null);
+                }
+                
+                // Помечаем что это ask узел
+                context.put("node_type", "ask");
+                
+                return question != null ? question : "Вопрос пользователю";
+                
+            } else if ("announce".equals(type)) {
+                // Узел announce - возвращаем сообщение
+                String message = (String) parameters.get("message");
+                
+                // Переходим к следующему узлу
+                if (nextNodes != null && !nextNodes.isEmpty()) {
+                    context.put("current_node", nextNodes.get(0));
+                } else {
+                    // Конец сценария
+                    context.put("current_node", null);
+                    context.put("node_type", "exit");
+                    return message != null ? message : "Диалог завершен.";
+                }
+                
+                // Помечаем что это announce узел
+                context.put("node_type", "announce");
+                
+                return message != null ? message : "Сообщение пользователю";
+                
+            } else if ("transfer".equals(type)) {
+                // Узел transfer - передача оператору
+                String message = (String) parameters.get("message");
+                
+                // Завершаем диалог
+                context.put("current_node", null);
+                context.put("node_type", "transfer");
+                
+                return message != null ? message : "Передаю вас оператору...";
+                
+            } else if ("end".equals(type)) {
+                // Узел end - завершение диалога
+                String message = (String) parameters.get("message");
+                
+                // Завершаем диалог
+                context.put("current_node", null);
+                context.put("node_type", "exit");
+                
+                return message != null ? message : "Диалог завершен.";
+                
+            } else if ("nlu-request".equals(type)) {
+                // Узел NLU - анализ и переход дальше
+                // Просто переходим к следующему узлу (NLU выполняется в другом месте)
+                
+                // Переходим к следующему узлу
+                if (nextNodes != null && !nextNodes.isEmpty()) {
+                    context.put("current_node", nextNodes.get(0));
+                    // Рекурсивно выполняем следующий узел
+                    return executeNodesSequentially(scenarioData, nextNodes.get(0), context);
+                } else {
+                    context.put("current_node", null);
+                    context.put("node_type", "exit");
+                    return "Диалог завершен.";
+                }
+                
+            } else {
+                // Другие типы узлов - пока просто переходим дальше
+                if (nextNodes != null && !nextNodes.isEmpty()) {
+                    context.put("current_node", nextNodes.get(0));
+                    // Рекурсивно выполняем следующий узел
+                    return executeNodesSequentially(scenarioData, nextNodes.get(0), context);
+                } else {
+                    context.put("current_node", null);
+                    return "Диалог завершен.";
+                }
+            }
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to execute nodes sequentially");
+            return "Ошибка выполнения узлов.";
+        }
+    }
+    
+    private Map<String, Object> findNodeById(List<Map<String, Object>> nodes, String nodeId) {
+        for (Map<String, Object> node : nodes) {
+            if (nodeId.equals(node.get("id"))) {
+                return node;
+            }
+        }
+        return null;
+    }
+    
+    public String getInitialMessageFromEntryPoint(Map<String, Object> context) {
+        try {
+            // Загружаем entry point сценарий
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:8093/api/v1/scenarios/entry-point"))
+                .header("Content-Type", "application/json")
+                .GET()
+                .build();
+            
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() == 200) {
+                ObjectMapper mapper = new ObjectMapper();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> scenarioData = mapper.readValue(response.body(), Map.class);
+                
+                String scenarioId = (String) scenarioData.get("id");
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) scenarioData.get("scenario_data");
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
+                
+                // Находим реальный стартовый узел (узел без входящих связей)
+                String realStartNode = findRealStartNode(nodes, scenarioData);
+                
+                // Сохраняем в контекст для будущих вызовов
+                context.put("scenario_id", scenarioId);
+                context.put("current_node", realStartNode);
+                
+                // Выполняем узлы подряд до первого ask
+                return executeNodesSequentially(scenarioData, realStartNode, context);
+            }
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to get initial message from entry point");
+        }
+        
+        return "Привет! Добро пожаловать в банковский чат-бот.";
+    }
+    
+    private String findRealStartNode(List<Map<String, Object>> nodes, Map<String, Object> scenarioData) {
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) scenarioData.get("scenario_data");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> edges = (List<Map<String, Object>>) data.get("edges");
+            
+            // Собираем все узлы, которые являются target (имеют входящие связи)
+            Set<String> targetNodes = new HashSet<>();
+            if (edges != null) {
+                for (Map<String, Object> edge : edges) {
+                    String target = (String) edge.get("target");
+                    if (target != null) {
+                        targetNodes.add(target);
+                    }
+                }
+            }
+            
+            // Находим узел, который не является target ни одной связи
+            for (Map<String, Object> node : nodes) {
+                String nodeId = (String) node.get("id");
+                if (!targetNodes.contains(nodeId)) {
+                    LOG.infof("Found real start node: %s", nodeId);
+                    return nodeId;
+                }
+            }
+            
+            // Если не нашли, используем start_node из сценария
+            String startNode = (String) data.get("start_node");
+            LOG.infof("Using scenario start_node: %s", startNode);
+            return startNode;
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to find real start node");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) scenarioData.get("scenario_data");
+            return (String) data.get("start_node");
+        }
+    }
+    
+    public String continueExecution(String sessionId, Map<String, Object> context) {
+        try {
+            LOG.infof("Continuing execution for session %s", sessionId);
+            
+            // ИСПРАВЛЕНО: Проверяем флаг завершения сценария
+            Boolean scenarioCompleted = (Boolean) context.get("scenario_completed");
+            if (scenarioCompleted != null && scenarioCompleted) {
+                return "Диалог завершен.";
+            }
+            
+            // Получаем текущий узел из контекста
+            String currentNodeId = (String) context.get("current_node");
+            String scenarioId = (String) context.get("scenario_id");
+            
+            if (currentNodeId == null || currentNodeId.isEmpty() || scenarioId == null) {
+                return "Диалог завершен.";
+            }
+            
+            // ОТКАТ: Используем старую логику continueScenarioExecution для continue
+            return continueScenarioExecution(sessionId, "", context, scenarioId, currentNodeId);
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Error continuing execution in scenario engine");
+            return "Извините, произошла ошибка при продолжении диалога.";
+        }
+    }
+    
+    // Старая логика для continue (без пользовательского ввода)
+    private String continueScenarioExecutionOld(String sessionId, Map<String, Object> context, String scenarioId, String currentNodeId) {
+        try {
+            // Загружаем сценарий
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:8093/api/v1/scenarios/" + scenarioId))
+                .header("Content-Type", "application/json")
+                .GET()
+                .build();
+            
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() == 200) {
+                ObjectMapper mapper = new ObjectMapper();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> scenarioData = mapper.readValue(response.body(), Map.class);
+                
+                // ВАЖНО: Используем старую логику executeNodesSequentially для continue
+                return executeNodesSequentially(scenarioData, currentNodeId, context);
+            }
+            
+            return "Ошибка загрузки сценария.";
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Error in continueScenarioExecutionOld");
+            return "Ошибка выполнения сценария.";
+        }
     }
 }

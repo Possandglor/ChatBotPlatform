@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:8090/api/v1',
+  baseURL: 'http://localhost:8092/api/v1',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
@@ -97,6 +97,14 @@ export const apiService = {
     const response = await api.post('/chat/messages', {
       session_id: sessionId,
       content: message
+    });
+    return { data: response }; // Wrap response in data object for compatibility
+  },
+
+  continueSession: async (sessionId: string) => {
+    // Call continue endpoint for automatic progression
+    const response = await api.post('/chat/continue', {
+      session_id: sessionId
     });
     return { data: response }; // Wrap response in data object for compatibility
   }
