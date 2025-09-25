@@ -330,6 +330,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       'ask': 'Вопрос', 
       'api_call': 'API запрос',
       'llm_call': 'LLM запрос',
+      'nlu_call': 'NLU запрос',
       'scenario_jump': 'Переход в сценарий',
       'transfer': 'Перевод на оператора',
       'end': 'Завершение диалога',
@@ -349,6 +350,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       nodeData = { ...baseData, url: 'https://api.example.com', method: 'GET', content: 'API запрос' };
     } else if (selectedNodeType === 'llm_call') {
       nodeData = { ...baseData, content: 'Запрос в LLM модель' };
+    } else if (selectedNodeType === 'nlu_call') {
+      nodeData = { ...baseData, content: 'Анализ через NLU' };
     } else if (selectedNodeType === 'scenario_jump') {
       nodeData = { ...baseData, content: 'Переход в другой сценарий' };
     } else if (selectedNodeType === 'transfer') {
@@ -669,6 +672,27 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           </Form.Item>
         )}
 
+        {data.type === 'nlu_call' && (
+          <>
+            <Form.Item label="NLU сервис">
+              <Input
+                value={data.service || 'nlu-service'}
+                onChange={(e) => updateNodeData(selectedNode.id, { service: e.target.value })}
+                placeholder="nlu-service"
+                disabled={false}
+              />
+            </Form.Item>
+            <Form.Item label="Endpoint">
+              <Input
+                value={data.endpoint || '/api/v1/nlu/analyze'}
+                onChange={(e) => updateNodeData(selectedNode.id, { endpoint: e.target.value })}
+                placeholder="/api/v1/nlu/analyze"
+                disabled={false}
+              />
+            </Form.Item>
+          </>
+        )}
+
         {data.type === 'scenario_jump' && (
           <Form.Item label="ID целевого сценария">
             <Input
@@ -733,6 +757,7 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
             <Option value="ask">Вопрос</Option>
             <Option value="api_call">Запрос в API</Option>
             <Option value="llm_call">Запрос в LLM</Option>
+            <Option value="nlu_call">Запрос в NLU</Option>
             <Option value="scenario_jump">Переход в сценарий</Option>
             <Option value="transfer">Перевод на оператора</Option>
             <Option value="end">Завершение диалога</Option>
