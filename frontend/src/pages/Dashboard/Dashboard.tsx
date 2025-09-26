@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Row, Col, Statistic, Table, Tag, Button, Space, Alert } from 'antd';
+import { Card, Row, Col, Statistic, Button, Space, Alert } from 'antd';
 import {
   MessageOutlined,
   UserOutlined,
@@ -8,13 +8,6 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import { apiService } from '../../services/api';
-
-interface ServiceStatus {
-  name: string;
-  status: 'running' | 'error' | 'unknown';
-  port: number;
-  role?: string;
-}
 
 interface DashboardStats {
   totalDialogs: number;
@@ -30,7 +23,6 @@ const Dashboard: React.FC = () => {
     totalScenarios: 0,
     totalIntents: 0,
   });
-  const [services, setServices] = useState<ServiceStatus[]>([]);
   const [loading, setLoading] = useState(false);
 
   const loadDashboardData = async () => {
@@ -40,25 +32,44 @@ const Dashboard: React.FC = () => {
       const scenariosResponse = await apiService.getScenarios();
       const scenariosCount = scenariosResponse.data.scenarios?.length || scenariosResponse.data.count || 0;
 
+      // Загружаем количество интентов из Orchestrator
+      let intentsCount = 24; // fallback
+      try {
+        const intentsResponse = await fetch('http://localhost:8092/api/v1/nlu/intents');
+        const intentsData = await intentsResponse.json();
+        intentsCount = intentsData.intents?.length || intentsData.length || 24;
+      } catch (intentsError) {
+        console.log('Orchestrator недоступен, используем fallback значение');
+      }
+
       // Загружаем статистику диалогов
-      const dialogsResponse = await apiService.getDialogs();
-      const dialogsCount = dialogsResponse.data.sessions?.length || 0;
+      let totalDialogs = 0;
+      let activeDialogs = 0;
+      try {
+        // Всего диалогов (включая завершенные)
+        const allDialogsResponse = await fetch('http://localhost:8092/api/v1/chat/sessions');
+        if (allDialogsResponse.ok) {
+          const allDialogsData = await allDialogsResponse.json();
+          totalDialogs = allDialogsData.sessions?.length || 0;
+        }
+        
+        // Активные диалоги (только незавершенные)
+        const activeDialogsResponse = await fetch('http://localhost:8092/api/v1/chat/sessions/active');
+        if (activeDialogsResponse.ok) {
+          const activeDialogsData = await activeDialogsResponse.json();
+          activeDialogs = activeDialogsData.sessions?.length || 0;
+        }
+      } catch (dialogError) {
+        console.log('Диалоги недоступны');
+      }
 
-      // Обновляем статистику
+      // Загружаем статистику (все из Orchestrator)
       setStats({
-        totalDialogs: dialogsCount,
-        activeDialogs: Math.floor(dialogsCount * 0.1), // 10% активных
+        totalDialogs: totalDialogs,
+        activeDialogs: activeDialogs,
         totalScenarios: scenariosCount,
-        totalIntents: 24, // Пока мок
+        totalIntents: intentsCount,
       });
-
-      // Статусы сервисов - используем статичные данные (реальные проверки через proxy)
-      setServices([
-        { name: 'Chat Service', status: 'running', port: 8091, role: 'session_manager' },
-        { name: 'Orchestrator', status: 'running', port: 8092, role: 'main_coordinator' },
-        { name: 'Scenario Service', status: 'running', port: 8093, role: 'scenario_provider' },
-        { name: 'NLU Service', status: 'running', port: 8098, role: 'nlu_processor' },
-      ]);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
       // Fallback к мок данным
@@ -77,45 +88,6 @@ const Dashboard: React.FC = () => {
     loadDashboardData();
   }, []);
 
-  const serviceColumns = [
-    {
-      title: 'Сервис',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: 'Порт',
-      dataIndex: 'port',
-      key: 'port',
-    },
-    {
-      title: 'Роль',
-      dataIndex: 'role',
-      key: 'role',
-      render: (role: string) => (
-        <Tag color="blue">{role}</Tag>
-      ),
-    },
-    {
-      title: 'Статус',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => {
-        const config = {
-          running: { color: 'success', icon: <CheckCircleOutlined />, text: 'Работает' },
-          error: { color: 'error', icon: <ExclamationCircleOutlined />, text: 'Ошибка' },
-          unknown: { color: 'default', icon: <ExclamationCircleOutlined />, text: 'Неизвестно' },
-        };
-        const { color, icon, text } = config[status as keyof typeof config];
-        return (
-          <Tag color={color} icon={icon}>
-            {text}
-          </Tag>
-        );
-      },
-    },
-  ];
-
   return (
     <div>
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -128,14 +100,6 @@ const Dashboard: React.FC = () => {
           Обновить
         </Button>
       </div>
-
-      <Alert
-        message="Интеграция с реальным бэкендом"
-        description="Данные загружаются из микросервисов: Chat Service, Orchestrator, Scenario Service, NLU Service."
-        type="success"
-        showIcon
-        style={{ marginBottom: 24 }}
-      />
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={12} md={6}>
@@ -177,16 +141,6 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
       </Row>
-
-      <Card title="Статус микросервисов" style={{ marginBottom: 24 }}>
-        <Table
-          columns={serviceColumns}
-          dataSource={services}
-          rowKey="name"
-          pagination={false}
-          loading={loading}
-        />
-      </Card>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>

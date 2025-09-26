@@ -7,7 +7,6 @@ import Scenarios from './pages/Scenarios/Scenarios';
 import Testing from './pages/Testing/Testing';
 import Dialogs from './pages/Dialogs/Dialogs';
 import NLU from './pages/NLU/NLU';
-import Users from './pages/Users/Users';
 import Logs from './pages/Logs/Logs';
 
 const App: React.FC = () => {
@@ -29,7 +28,6 @@ const App: React.FC = () => {
               <Route path="/testing" element={<Testing />} />
               <Route path="/dialogs" element={<Dialogs />} />
               <Route path="/nlu" element={<NLU />} />
-              <Route path="/users" element={<Users />} />
               <Route path="/logs" element={<Logs />} />
             </Routes>
           </Layout>

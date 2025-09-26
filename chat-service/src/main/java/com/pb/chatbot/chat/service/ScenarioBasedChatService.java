@@ -270,6 +270,10 @@ public class ScenarioBasedChatService {
         sessions.remove(sessionId);
     }
     
+    public int getTotalSessionsCount() {
+        return sessions.size();
+    }
+    
     private static class SessionState {
         String currentStep = "start";
         String currentScenarioId = null;

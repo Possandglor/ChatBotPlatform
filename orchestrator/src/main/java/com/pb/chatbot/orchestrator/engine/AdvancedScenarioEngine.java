@@ -566,19 +566,28 @@ public class AdvancedScenarioEngine {
         }
     }
     
-    // 🏁 END - Завершение диалога
+    // 🏁 END - Завершение диалога или возврат из sub-flow
     private Map<String, Object> executeEnd(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
-        LOG.infof("Ending dialog");
+        Boolean inSubFlow = (Boolean) context.get("in_sub_flow");
         
-        context.put("scenario_completed", true);
-        context.put("dialog_ended", true);
-        
-        String message = "Диалог завершен.";
-        if (node.parameters != null) {
-            message = (String) node.parameters.getOrDefault("message", message);
+        if (inSubFlow != null && inSubFlow) {
+            // В sub-flow - возвращаемся в основной сценарий
+            LOG.infof("Ending sub-flow, returning to main scenario");
+            return returnFromSubFlow(context);
+        } else {
+            // В основном сценарии - завершаем диалог
+            LOG.infof("Ending dialog");
+            
+            context.put("scenario_completed", true);
+            context.put("dialog_ended", true);
+            
+            String message = "Диалог завершен.";
+            if (node.parameters != null) {
+                message = (String) node.parameters.getOrDefault("message", message);
+            }
+            
+            return createResponse("end", message, null, context);
         }
-        
-        return createResponse("end", message, null, context);
     }
     
     // 🛑 END_DIALOG - Принудительное завершение диалога (игнорирует sub-flow)
@@ -600,6 +609,77 @@ public class AdvancedScenarioEngine {
         }
         
         return createResponse("end_dialog", message, null, context);
+    }
+    
+    // 🔄 RETURN FROM SUB-FLOW - Возврат из подсценария в основной сценарий
+    private Map<String, Object> returnFromSubFlow(Map<String, Object> context) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> callStack = (List<Map<String, Object>>) context.get("call_stack");
+        
+        if (callStack == null || callStack.isEmpty()) {
+            LOG.errorf("Call stack is empty, cannot return from sub-flow");
+            // Завершаем диалог если нет куда возвращаться
+            context.put("scenario_completed", true);
+            context.put("dialog_ended", true);
+            return createResponse("end", "Диалог завершен.", null, context);
+        }
+        
+        // Извлекаем последний элемент из стека (куда возвращаться)
+        Map<String, Object> returnContext = callStack.remove(callStack.size() - 1);
+        
+        // Восстанавливаем контекст основного сценария
+        String returnScenarioId = (String) returnContext.get("scenario_id");
+        String nextNodeId = (String) returnContext.get("next_node");
+        
+        context.put("scenario_id", returnScenarioId);
+        context.put("current_node", nextNodeId);
+        context.put("call_stack", callStack);
+        
+        // Если стек пуст - выходим из sub-flow режима
+        if (callStack.isEmpty()) {
+            context.put("in_sub_flow", false);
+        }
+        
+        LOG.infof("Returned from sub-flow to scenario %s, next node: %s", returnScenarioId, nextNodeId);
+        
+        // Продолжаем выполнение в основном сценарии
+        if (nextNodeId != null && !nextNodeId.isEmpty()) {
+            try {
+                // Получаем основной сценарий через HTTP
+                HttpClient client = HttpClient.newHttpClient();
+                HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://localhost:8093/api/v1/scenarios/" + returnScenarioId))
+                    .header("Content-Type", "application/json")
+                    .GET()
+                    .build();
+                
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                
+                if (response.statusCode() == 200) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> scenarioResponse = mapper.readValue(response.body(), Map.class);
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> scenarioData = (Map<String, Object>) scenarioResponse.get("scenario_data");
+                    
+                    if (scenarioData != null) {
+                        Scenario mainScenario = convertMapToScenario(scenarioData);
+                        ScenarioBlock nextNode = findNodeById(mainScenario, nextNodeId);
+                        
+                        if (nextNode != null) {
+                            LOG.infof("Continuing main scenario with node: %s (type: %s)", nextNodeId, nextNode.type);
+                            return executeNodeByType(nextNode, "", context, mainScenario);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOG.errorf(e, "Error continuing main scenario after sub-flow return");
+            }
+        }
+        
+        // Если не удалось продолжить - завершаем
+        context.put("scenario_completed", true);
+        return createResponse("end", "Возврат из подсценария завершен.", null, context);
     }
     
     // 👤 TRANSFER - Перевод на оператора

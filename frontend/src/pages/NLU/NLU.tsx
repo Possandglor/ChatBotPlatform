@@ -295,7 +295,7 @@ const NLU: React.FC = () => {
           <Card>
             <Statistic
               title="Всего интентов"
-              value={24}
+              value={intents.length}
               prefix={<ThunderboltOutlined />}
               valueStyle={{ color: '#52c41a' }}
             />
@@ -305,7 +305,7 @@ const NLU: React.FC = () => {
           <Card>
             <Statistic
               title="Примеров"
-              value={156}
+              value={intents.reduce((total, intent) => total + (intent.examples?.length || 0), 0)}
               valueStyle={{ color: '#1890ff' }}
             />
           </Card>
@@ -314,7 +314,7 @@ const NLU: React.FC = () => {
           <Card>
             <Statistic
               title="Средняя уверенность"
-              value={85}
+              value={intents.length > 0 ? Math.round(intents.reduce((sum, intent) => sum + (intent.confidence || 0.85), 0) / intents.length * 100) : 0}
               suffix="%"
               valueStyle={{ color: '#722ed1' }}
             />
@@ -324,7 +324,7 @@ const NLU: React.FC = () => {
           <Card>
             <Statistic
               title="Точность"
-              value={92.5}
+              value={intents.length > 0 ? Math.round(intents.reduce((sum, intent) => sum + (intent.accuracy || 0.92), 0) / intents.length * 100) : 0}
               precision={1}
               suffix="%"
               valueStyle={{ color: '#fa8c16' }}

@@ -102,10 +102,11 @@ const Scenarios: React.FC = () => {
       render: (date: string) => new Date(date).toLocaleDateString('ru-RU'),
     },
     {
-      title: 'Действия',
-      key: 'actions',
+      title: 'Узлов',
+      dataIndex: 'scenario_data',
       key: 'nodes_count',
-      render: (nodes: any[]) => nodes?.length || 0,
+      width: 80,
+      render: (scenarioData: any) => scenarioData?.nodes?.length || 0,
     },
     {
       title: 'Обновлен',
@@ -116,6 +117,7 @@ const Scenarios: React.FC = () => {
     {
       title: 'Действия',
       key: 'actions',
+      width: 150,
       render: (_: any, record: Scenario) => (
         <Space>
           <Button

@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @ApplicationScoped
@@ -39,6 +40,9 @@ public class OrchestratorController {
     private static final Map<String, Map<String, Object>> sessions = new ConcurrentHashMap<>();
     private static final Map<String, List<Map<String, Object>>> sessionMessages = new ConcurrentHashMap<>();
     private static final Map<String, Map<String, Object>> sessionContexts = new ConcurrentHashMap<>();
+    
+    // Отдельный список активных сессий (для быстрого доступа)
+    private static final Set<String> activeSessions = ConcurrentHashMap.newKeySet();
 
     @GET
     @Path("/health")
@@ -74,6 +78,7 @@ public class OrchestratorController {
         session.put("scenario_id", null);
         
         sessions.put(sessionId, session);
+        activeSessions.add(sessionId); // Добавляем в активные сессии
         
         // Добавляем начальное сообщение бота в историю
         List<Map<String, Object>> messages = new ArrayList<>();
@@ -125,6 +130,35 @@ public class OrchestratorController {
         if (botResponse == null) {
             LOG.errorf("processUserMessage returned null for session %s, content: %s", sessionId, content);
             botResponse = "Извините, произошла ошибка при обработке сообщения.";
+        }
+        
+        // Проверяем завершение диалога и убираем из активных сессий
+        Map<String, Object> currentSessionContext = sessionContexts.get(sessionId);
+        if (currentSessionContext != null) {
+            Boolean dialogEnded = (Boolean) currentSessionContext.get("dialog_ended");
+            Boolean scenarioCompleted = (Boolean) currentSessionContext.get("scenario_completed");
+            
+            if ((dialogEnded != null && dialogEnded) || (scenarioCompleted != null && scenarioCompleted)) {
+                // Диалог завершен - убираем только из активных сессий
+                activeSessions.remove(sessionId);
+                // Обновляем статус сессии на "completed"
+                Map<String, Object> currentSession = sessions.get(sessionId);
+                if (currentSession != null) {
+                    currentSession.put("status", "completed");
+                }
+                LOG.infof("Session %s removed from active sessions - dialog ended", sessionId);
+                
+                // Возвращаем финальный ответ
+                return Response.ok(Map.of(
+                    "session_id", sessionId,
+                    "message_saved", true,
+                    "bot_response", botResponse,
+                    "node_type", "end",
+                    "context", currentSessionContext,
+                    "session_ended", true,
+                    "timestamp", System.currentTimeMillis()
+                )).build();
+            }
         }
         
         // Сохраняем сообщение пользователя
@@ -200,6 +234,21 @@ public class OrchestratorController {
         return Response.ok(Map.of(
             "sessions", sessionList,
             "count", sessionList.size()
+        )).build();
+    }
+    
+    @GET
+    @Path("/chat/sessions/active")
+    public Response getActiveChatSessions() {
+        List<Map<String, Object>> activeSessionList = activeSessions.stream()
+            .map(sessions::get)
+            .filter(Objects::nonNull)
+            .sorted((s1, s2) -> ((String)s2.get("start_time")).compareTo((String)s1.get("start_time")))
+            .collect(Collectors.toList());
+        
+        return Response.ok(Map.of(
+            "sessions", activeSessionList,
+            "count", activeSessionList.size()
         )).build();
     }
 

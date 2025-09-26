@@ -18,7 +18,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { key: '/scenarios', label: 'Сценарии' },
     { key: '/dialogs', label: 'Диалоги' },
     { key: '/nlu', label: 'NLU' },
-    { key: '/users', label: 'Пользователи' },
     { key: '/logs', label: 'Логи' },
   ];
 

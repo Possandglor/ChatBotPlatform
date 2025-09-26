@@ -247,4 +247,25 @@ public class SimpleChatController {
             "timestamp", System.currentTimeMillis()
         )).build();
     }
+    
+    @GET
+    @Path("/sessions/stats")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getSessionsStats() {
+        try {
+            int totalSessions = chatService.getTotalSessionsCount();
+            int activeSessions = chatService.getActiveSessionsCount();
+            
+            return Response.ok(Map.of(
+                "total_sessions", totalSessions,
+                "active_sessions", activeSessions,
+                "timestamp", System.currentTimeMillis()
+            )).build();
+        } catch (Exception e) {
+            LOG.errorf(e, "Error getting sessions stats");
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of("error", "Failed to get sessions stats"))
+                    .build();
+        }
+    }
 }
