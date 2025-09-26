@@ -81,6 +81,7 @@ public class AdvancedScenarioEngine {
                 return executeSwitch(node, context, scenario);
                 
             case "api-request":
+            case "api_call":
                 return executeApiRequest(node, context, scenario);
                 
             case "nlu-request":
@@ -160,7 +161,10 @@ public class AdvancedScenarioEngine {
             nextNode = getNextNode(node, context);
         } else {
             // При ошибке парсинга - переход к error узлу
-            nextNode = (String) node.conditions.get("error");
+            nextNode = null;
+            if (node.conditions != null) {
+                nextNode = (String) node.conditions.get("error");
+            }
             if (nextNode == null) {
                 nextNode = getNextNode(node, context);
             }
@@ -196,17 +200,17 @@ public class AdvancedScenarioEngine {
             boolean conditionResult = evaluateCondition(condition, context);
             
             if (conditionResult) {
-                nextNode = (String) node.conditions.get("true");
+                nextNode = node.conditions != null ? (String) node.conditions.get("true") : null;
             } else {
-                nextNode = (String) node.conditions.get("false");
+                nextNode = node.conditions != null ? (String) node.conditions.get("false") : null;
             }
             
-            if (nextNode == null) {
+            if (nextNode == null && node.conditions != null) {
                 String conditionValue = getConditionValue(condition, context);
                 nextNode = (String) node.conditions.get(conditionValue);
             }
             
-            if (nextNode == null) {
+            if (nextNode == null && node.conditions != null) {
                 nextNode = (String) node.conditions.get("default");
             }
         } 
@@ -338,7 +342,7 @@ public class AdvancedScenarioEngine {
                 // ОТЛАДКА: Проверяем conditions
                 LOG.infof("NLU node conditions: %s", node.conditions);
                 
-                String nextNode = (String) node.conditions.get("success");
+                String nextNode = node.conditions != null ? (String) node.conditions.get("success") : null;
                 LOG.infof("NLU nextNode from conditions.success: %s", nextNode);
                 
                 if (nextNode == null) {
@@ -367,7 +371,7 @@ public class AdvancedScenarioEngine {
                 LOG.errorf("NLU request failed with status: %d", response.statusCode());
                 context.put("nlu_error", "NLU service unavailable");
                 
-                String errorNode = (String) node.conditions.get("error");
+                String errorNode = node.conditions != null ? (String) node.conditions.get("error") : null;
                 if (errorNode == null) {
                     errorNode = getNextNode(node, context);
                 }
@@ -380,7 +384,7 @@ public class AdvancedScenarioEngine {
             LOG.errorf(e, "NLU request failed: %s", e.getMessage());
             context.put("nlu_error", e.getMessage());
             
-            String errorNode = (String) node.conditions.get("error");
+            String errorNode = node.conditions != null ? (String) node.conditions.get("error") : null;
             if (errorNode == null) {
                 errorNode = getNextNode(node, context);
             }
@@ -395,18 +399,47 @@ public class AdvancedScenarioEngine {
         String method = (String) node.parameters.getOrDefault("method", "GET");
         String baseUrl = (String) node.parameters.get("baseUrl");
         Map<String, Object> data = (Map<String, Object>) node.parameters.get("data");
-        Map<String, String> headers = (Map<String, String>) node.parameters.get("headers");
+        
+        // ИСПРАВЛЕНО: Поддержка headers как String или Map
+        Map<String, String> headers = null;
+        Object headersObj = node.parameters.get("headers");
+        if (headersObj instanceof Map) {
+            headers = (Map<String, String>) headersObj;
+        } else if (headersObj instanceof String && !((String) headersObj).trim().isEmpty()) {
+            try {
+                headers = objectMapper.readValue((String) headersObj, Map.class);
+            } catch (Exception e) {
+                LOG.warnf("Failed to parse headers JSON: %s", headersObj);
+            }
+        }
+        
+        // ИСПРАВЛЕНО: Поддержка body параметра как String или Map
+        Object body = node.parameters.get("body");
+        if (body != null && data == null) {
+            if (body instanceof Map) {
+                data = (Map<String, Object>) body;
+            } else if (body instanceof String && !((String) body).trim().isEmpty()) {
+                try {
+                    data = objectMapper.readValue((String) body, Map.class);
+                } catch (Exception e) {
+                    data = Map.of("_raw_body", body);
+                }
+            }
+        }
         Integer timeout = (Integer) node.parameters.getOrDefault("timeout", 30000);
         
         LOG.infof("Making API request to %s: %s %s", service, method, endpoint);
         
         try {
             // Определяем URL
-            String url;
-            if (baseUrl != null) {
-                url = baseUrl + endpoint;
-            } else {
-                url = getServiceUrl(service) + endpoint;
+            String url = (String) node.parameters.get("url");
+            if (url == null) {
+                // Fallback на старый формат service+endpoint
+                if (baseUrl != null) {
+                    url = baseUrl + endpoint;
+                } else {
+                    url = getServiceUrl(service) + endpoint;
+                }
             }
             
             // Подстановка переменных в URL
@@ -448,16 +481,19 @@ public class AdvancedScenarioEngine {
             try {
                 Map<String, Object> apiResponse = objectMapper.readValue(response.body(), Map.class);
                 context.put("api_response", apiResponse);
+                // ИСПРАВЛЕНО: Добавляем api_response_<node_id> как раньше
+                context.put("api_response_" + node.id, apiResponse);
             } catch (Exception e) {
                 context.put("api_response", response.body());
+                context.put("api_response_" + node.id, response.body());
             }
             context.put("api_status_code", response.statusCode());
             
             String nextNode;
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                nextNode = (String) node.conditions.get("success");
+                nextNode = node.conditions != null ? (String) node.conditions.get("success") : null;
             } else {
-                nextNode = (String) node.conditions.get("error");
+                nextNode = node.conditions != null ? (String) node.conditions.get("error") : null;
             }
             
             if (nextNode == null) {
@@ -480,9 +516,12 @@ public class AdvancedScenarioEngine {
             LOG.errorf("API request timeout: %s", e.getMessage());
             context.put("api_error", "timeout");
             
-            String timeoutNode = (String) node.conditions.get("timeout");
-            if (timeoutNode == null) {
-                timeoutNode = (String) node.conditions.get("error");
+            String timeoutNode = null;
+            if (node.conditions != null) {
+                timeoutNode = (String) node.conditions.get("timeout");
+                if (timeoutNode == null) {
+                    timeoutNode = (String) node.conditions.get("error");
+                }
             }
             if (timeoutNode == null) {
                 timeoutNode = getNextNode(node, context);
@@ -495,7 +534,10 @@ public class AdvancedScenarioEngine {
             LOG.errorf(e, "API request failed: %s", e.getMessage());
             context.put("api_error", e.getMessage());
             
-            String errorNode = (String) node.conditions.get("error");
+            String errorNode = null;
+            if (node.conditions != null) {
+                errorNode = (String) node.conditions.get("error");
+            }
             if (errorNode == null) {
                 errorNode = getNextNode(node, context);
             }
@@ -983,20 +1025,89 @@ public class AdvancedScenarioEngine {
         if (text == null) return null;
         
         String result = text;
+        
+        // Подстановка всех полей контекста включая api_response
         for (Map.Entry<String, Object> entry : context.entrySet()) {
-            String placeholder = "{context." + entry.getKey() + "}";
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            
+            // Простая подстановка {context.key}
+            String placeholder = "{context." + key + "}";
             if (result.contains(placeholder)) {
-                result = result.replace(placeholder, String.valueOf(entry.getValue()));
+                result = result.replace(placeholder, String.valueOf(value));
+            }
+            
+            // ИСПРАВЛЕНО: Подстановка для вложенных объектов и массивов
+            if (value instanceof Map) {
+                Map<String, Object> map = (Map<String, Object>) value;
+                for (Map.Entry<String, Object> mapEntry : map.entrySet()) {
+                    String mapKey = mapEntry.getKey();
+                    Object mapValue = mapEntry.getValue();
+                    
+                    // Второй уровень: {context.api_response.service}
+                    String nestedPlaceholder = "{context." + key + "." + mapKey + "}";
+                    if (result.contains(nestedPlaceholder)) {
+                        result = result.replace(nestedPlaceholder, String.valueOf(mapValue));
+                    }
+                    
+                    // Массивы в объектах: {context.api_response.endpoints[0]}
+                    if (mapValue instanceof java.util.List) {
+                        java.util.List<?> list = (java.util.List<?>) mapValue;
+                        for (int i = 0; i < list.size(); i++) {
+                            String arrayPlaceholder = "{context." + key + "." + mapKey + "[" + i + "]}";
+                            if (result.contains(arrayPlaceholder)) {
+                                result = result.replace(arrayPlaceholder, String.valueOf(list.get(i)));
+                            }
+                        }
+                    }
+                    
+                    // Третий уровень для объектов: {context.api_response.stats.memory_usage}
+                    if (mapValue instanceof Map) {
+                        Map<String, Object> nestedMap = (Map<String, Object>) mapValue;
+                        for (Map.Entry<String, Object> nestedEntry : nestedMap.entrySet()) {
+                            String deepPlaceholder = "{context." + key + "." + mapKey + "." + nestedEntry.getKey() + "}";
+                            if (result.contains(deepPlaceholder)) {
+                                result = result.replace(deepPlaceholder, String.valueOf(nestedEntry.getValue()));
+                            }
+                        }
+                    }
+                }
             }
         }
         
-        // Подстановка из API ответа
+        // Подстановка из API ответа (обратная совместимость)
         if (context.containsKey("api_response")) {
             Map<String, Object> apiResponse = (Map<String, Object>) context.get("api_response");
             for (Map.Entry<String, Object> entry : apiResponse.entrySet()) {
-                String placeholder = "{api_response." + entry.getKey() + "}";
+                String key = entry.getKey();
+                Object value = entry.getValue();
+                
+                // Первый уровень: {api_response.service}
+                String placeholder = "{api_response." + key + "}";
                 if (result.contains(placeholder)) {
-                    result = result.replace(placeholder, String.valueOf(entry.getValue()));
+                    result = result.replace(placeholder, String.valueOf(value));
+                }
+                
+                // Второй уровень для объектов: {api_response.stats.memory_usage}
+                if (value instanceof Map) {
+                    Map<String, Object> nestedMap = (Map<String, Object>) value;
+                    for (Map.Entry<String, Object> nestedEntry : nestedMap.entrySet()) {
+                        String nestedPlaceholder = "{api_response." + key + "." + nestedEntry.getKey() + "}";
+                        if (result.contains(nestedPlaceholder)) {
+                            result = result.replace(nestedPlaceholder, String.valueOf(nestedEntry.getValue()));
+                        }
+                    }
+                }
+                
+                // Массивы: {api_response.endpoints[0]}
+                if (value instanceof java.util.List) {
+                    java.util.List<?> list = (java.util.List<?>) value;
+                    for (int i = 0; i < list.size(); i++) {
+                        String arrayPlaceholder = "{api_response." + key + "[" + i + "]}";
+                        if (result.contains(arrayPlaceholder)) {
+                            result = result.replace(arrayPlaceholder, String.valueOf(list.get(i)));
+                        }
+                    }
                 }
             }
         }

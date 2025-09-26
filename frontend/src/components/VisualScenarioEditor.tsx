@@ -357,6 +357,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           conditions: node.parameters?.conditions,
           url: node.parameters?.url,
           method: node.parameters?.method,
+          body: node.parameters?.body,
+          headers: node.parameters?.headers,
           prompt: node.parameters?.prompt,
           target_scenario: node.parameters?.target_scenario
         }
@@ -493,6 +495,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
               conditions: node.data.conditions,
               url: node.data.url,
               method: node.data.method,
+              body: node.data.body,
+              headers: node.data.headers,
               prompt: node.data.prompt,
               target_scenario: node.data.target_scenario
             },
@@ -636,6 +640,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           conditions: node.parameters?.conditions || node.conditions,
           url: node.parameters?.url || node.url,
           method: node.parameters?.method || node.method,
+          body: node.parameters?.body || node.body,
+          headers: node.parameters?.headers || node.headers,
           prompt: node.parameters?.prompt || node.prompt,
           target_scenario: node.parameters?.target_scenario || node.target_scenario
         }
@@ -713,6 +719,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
             options: node.parameters?.options,
             url: node.parameters?.url,
             method: node.parameters?.method,
+            body: node.parameters?.body,
+            headers: node.parameters?.headers,
             target_scenario: node.parameters?.target_scenario,
             prompt: node.parameters?.prompt
           }
@@ -938,6 +946,26 @@ intent != "unknown"
                 <Option value="PUT">PUT</Option>
                 <Option value="DELETE">DELETE</Option>
               </Select>
+            </Form.Item>
+            
+            <Form.Item label="Тело запроса (JSON)">
+              <Input.TextArea
+                value={data.body || ''}
+                onChange={(e) => updateNodeData(selectedNode.id, { body: e.target.value })}
+                placeholder='{"key": "value", "user": "{context.user_input}"}'
+                rows={3}
+                disabled={false}
+              />
+            </Form.Item>
+            
+            <Form.Item label="Заголовки (JSON)">
+              <Input.TextArea
+                value={data.headers || ''}
+                onChange={(e) => updateNodeData(selectedNode.id, { headers: e.target.value })}
+                placeholder='{"Authorization": "Bearer token", "Content-Type": "application/json"}'
+                rows={2}
+                disabled={false}
+              />
             </Form.Item>
           </>
         )}

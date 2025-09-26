@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Space, message, Modal, Tabs } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, NodeIndexOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, NodeIndexOutlined, ApiOutlined } from '@ant-design/icons';
 import { scenarioService } from '../../services/scenarioService';
 import VisualScenarioEditor from '../../components/VisualScenarioEditor';
+import { ApiNodeForm } from '../../components/ApiNodeForm';
 
 interface Scenario {
   id: string;
@@ -21,6 +22,7 @@ const Scenarios: React.FC = () => {
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [editingScenario, setEditingScenario] = useState<Scenario | null>(null);
   const [activeTab, setActiveTab] = useState('list');
+  const [apiFormVisible, setApiFormVisible] = useState(false);
 
   useEffect(() => {
     loadScenarios();
@@ -167,13 +169,22 @@ const Scenarios: React.FC = () => {
         <Card 
           title="Управление сценариями"
           extra={
-            <Button 
-              type="primary" 
-              icon={<PlusOutlined />}
-              onClick={loadScenarios}
-            >
-              Обновить
-            </Button>
+            <Space>
+              <Button 
+                type="default" 
+                icon={<ApiOutlined />}
+                onClick={() => setApiFormVisible(true)}
+              >
+                API узел
+              </Button>
+              <Button 
+                type="primary" 
+                icon={<PlusOutlined />}
+                onClick={loadScenarios}
+              >
+                Обновить
+              </Button>
+            </Space>
           }
         >
           <Table
@@ -226,6 +237,22 @@ const Scenarios: React.FC = () => {
             </pre>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        title="Создание API узла"
+        open={apiFormVisible}
+        onCancel={() => setApiFormVisible(false)}
+        footer={null}
+        width={700}
+      >
+        <ApiNodeForm 
+          onSave={(data) => {
+            console.log('API узел создан:', data);
+            message.success('API узел создан! (пока только демо)');
+            setApiFormVisible(false);
+          }}
+        />
       </Modal>
     </div>
   );

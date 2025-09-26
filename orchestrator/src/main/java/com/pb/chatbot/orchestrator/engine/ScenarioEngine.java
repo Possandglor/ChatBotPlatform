@@ -1,5 +1,6 @@
 package com.pb.chatbot.orchestrator.engine;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pb.chatbot.orchestrator.model.Scenario;
 import com.pb.chatbot.orchestrator.model.ScenarioBlock;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -7,11 +8,14 @@ import org.jboss.logging.Logger;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @ApplicationScoped
 public class ScenarioEngine {
     
     private static final Logger LOG = Logger.getLogger(ScenarioEngine.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
     
     public Map<String, Object> executeScenario(Scenario scenario, String userInput, Map<String, Object> context) {
         LOG.infof("Executing scenario: %s", scenario.name);
@@ -56,11 +60,9 @@ public class ScenarioEngine {
         String message = (String) block.parameters.get("message");
         Integer delay = (Integer) block.parameters.getOrDefault("delay", 0);
         
-        // Подстановка переменных из контекста
-        if (message != null && message.contains("{context.")) {
-            if (context.containsKey("cardNumber")) {
-                message = message.replace("{context.cardNumber}", (String) context.get("cardNumber"));
-            }
+        // Подстановка переменных из контекста с поддержкой JSON path
+        if (message != null) {
+            message = replaceVariables(message, context);
         }
         
         if (delay > 0) {
@@ -246,5 +248,49 @@ public class ScenarioEngine {
         response.put("error", error);
         response.put("timestamp", System.currentTimeMillis());
         return response;
+    }
+    
+    private String replaceVariables(String text, Map<String, Object> context) {
+        if (text == null) return null;
+        
+        String result = text;
+        Pattern pattern = Pattern.compile("\\{context\\.([^}]+)\\}");
+        Matcher matcher = pattern.matcher(text);
+        
+        while (matcher.find()) {
+            String path = matcher.group(1);
+            Object value = getValueByPath(context, path);
+            if (value != null) {
+                result = result.replace(matcher.group(0), String.valueOf(value));
+            }
+        }
+        
+        return result;
+    }
+    
+    private Object getValueByPath(Map<String, Object> context, String path) {
+        String[] parts = path.split("\\.");
+        Object current = context.get(parts[0]);
+        
+        // Если это JSON строка - парсим
+        if (current instanceof String && ((String) current).startsWith("{")) {
+            try {
+                current = objectMapper.readValue((String) current, Map.class);
+            } catch (Exception e) {
+                LOG.warnf("Failed to parse JSON: %s", e.getMessage());
+                return current; // Возвращаем как есть если не JSON
+            }
+        }
+        
+        // Проходим по пути
+        for (int i = 1; i < parts.length && current != null; i++) {
+            if (current instanceof Map) {
+                current = ((Map<?, ?>) current).get(parts[i]);
+            } else {
+                return null;
+            }
+        }
+        
+        return current;
     }
 }

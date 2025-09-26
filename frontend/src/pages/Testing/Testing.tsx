@@ -81,8 +81,11 @@ const Testing: React.FC = () => {
         };
         setMessages(prev => [...prev, botMessage]);
         
-        // Если это announce - продолжаем автоматически (кроме завершения диалога)
-        if (nodeType === 'announce' && !botResponse.includes('Диалог завершен')) {
+        // Если это announce - продолжаем автоматически (кроме завершения диалога и ошибок)
+        if (nodeType === 'announce' && 
+            !botResponse.includes('Диалог завершен') && 
+            !botResponse.includes('Ошибка выполнения сценария') &&
+            !botResponse.includes('Ошибка конфигурации')) {
           setTimeout(() => continueSession(sessionId), 500);
         } else if (nodeType === 'exit' || botResponse.includes('Диалог завершен')) {
           console.log('Диалог завершен');
