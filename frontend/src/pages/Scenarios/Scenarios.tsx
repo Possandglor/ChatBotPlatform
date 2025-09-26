@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Space, message, Modal, Tabs } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, NodeIndexOutlined } from '@ant-design/icons';
 import { scenarioService } from '../../services/scenarioService';
-import ScenarioEditor from '../../components/ScenarioEditor';
 import VisualScenarioEditor from '../../components/VisualScenarioEditor';
 
 interface Scenario {
@@ -65,7 +64,7 @@ const Scenarios: React.FC = () => {
 
   const editScenario = (scenario: Scenario) => {
     setEditingScenario(scenario);
-    setActiveTab('editor'); // Переключаемся на вкладку редактора
+    setActiveTab('visual'); // Переключаемся на визуальный редактор
   };
 
   const columns = [
@@ -153,16 +152,6 @@ const Scenarios: React.FC = () => {
         </span>
       ),
       children: <VisualScenarioEditor editingScenario={editingScenario} onScenarioSaved={() => { setEditingScenario(null); loadScenarios(); }} />
-    },
-    {
-      key: 'editor',
-      label: (
-        <span>
-          <EditOutlined />
-          Редактор форм
-        </span>
-      ),
-      children: <ScenarioEditor editingScenario={editingScenario} onScenarioSaved={() => { setEditingScenario(null); loadScenarios(); }} />
     },
     {
       key: 'list',

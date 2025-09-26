@@ -38,17 +38,35 @@ const CustomNode = ({ data, id, selected }: { data: any; id: string; selected: b
   };
 
   const renderOutputHandles = () => {
-    if (data.type === 'condition') {
-      const conditions = data.conditions || ['true', 'false'];
-      return conditions.map((condition: string, index: number) => (
+    if (data.type === 'condition' || data.type === 'switch') {
+      // ИСПРАВЛЕНО: Поддержка как строки, так и массива
+      let conditions = [];
+      if (typeof data.conditions === 'string') {
+        conditions = data.conditions.split('\n').filter(line => {
+          const trimmed = line.trim();
+          return trimmed && !trimmed.startsWith('//') && !trimmed.startsWith('#');
+        });
+      } else if (Array.isArray(data.conditions)) {
+        conditions = data.conditions;
+      } else {
+        conditions = ['true', 'false'];
+      }
+      
+      // Добавляем ELSE выход
+      const outputs = [...conditions, 'ELSE'];
+      
+      return outputs.map((condition: string, index: number) => (
         <Handle
-          key={`${id}-${condition}`}
+          key={`${id}-${condition}-${index}`}
           type="source"
           position={Position.Right}
-          id={condition}
+          id={`output-${index}`}
           style={{ 
-            top: `${30 + (index * 25)}px`,
-            background: getNodeColor(data.type)
+            top: `${30 + (index * 20)}px`,
+            right: '-6px',
+            width: '12px',
+            height: '12px',
+            backgroundColor: index === outputs.length - 1 ? '#ff4d4f' : '#52c41a'
           }}
         />
       ));
@@ -112,22 +130,27 @@ const CustomNode = ({ data, id, selected }: { data: any; id: string; selected: b
         </div>
         
         {/* Show conditions/options */}
-        {data.type === 'condition' && (
+        {(data.type === 'condition' || data.type === 'switch') && (
           <div style={{ fontSize: 10 }}>
             {(() => {
-              const conditions = data.conditions;
-              if (Array.isArray(conditions)) {
-                return conditions;
-              } else if (conditions && typeof conditions === 'object') {
-                return Object.keys(conditions);
+              let conditions = [];
+              if (typeof data.conditions === 'string') {
+                conditions = data.conditions.split('\n').filter(line => {
+                  const trimmed = line.trim();
+                  return trimmed && !trimmed.startsWith('//') && !trimmed.startsWith('#');
+                });
+              } else if (Array.isArray(data.conditions)) {
+                conditions = data.conditions;
               } else {
-                return ['true', 'false'];
+                conditions = ['true', 'false'];
               }
-            })().map((condition: string, index: number) => (
-              <div key={condition} style={{ marginBottom: 2 }}>
-                → {condition}
-              </div>
-            ))}
+              
+              return [...conditions, 'ELSE'].map((condition: string, index: number) => (
+                <div key={`${condition}-${index}`} style={{ marginBottom: 2 }}>
+                  → {condition.length > 20 ? condition.substring(0, 20) + '...' : condition}
+                </div>
+              ));
+            })()}
           </div>
         )}
         
@@ -160,7 +183,7 @@ interface VisualScenarioEditorProps {
 const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScenario, onScenarioSaved }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [selectedNodeType, setSelectedNodeType] = useState<string>('message');
+  const [selectedNodeType, setSelectedNodeType] = useState<string>('announce');
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [saveModalVisible, setSaveModalVisible] = useState(false);
@@ -376,9 +399,12 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       'llm_call': 'LLM запрос',
       'nlu-request': 'NLU запрос',
       'scenario_jump': 'Переход в сценарий',
+      'sub-flow': 'Подсценарий',
       'transfer': 'Перевод на оператора',
-      'end': 'Завершение диалога',
-      'condition': 'Условие выбора'
+      'end': 'Завершение/Возврат',
+      'end_dialog': 'Конец диалога',
+      'condition': 'Условие выбора',
+      'switch': 'Множественное условие'
     };
 
     const baseData = { 
@@ -389,7 +415,9 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
     // Add specific data for different node types
     let nodeData = baseData;
     if (selectedNodeType === 'condition') {
-      nodeData = { ...baseData, conditions: ['условие 1', 'условие 2'], content: 'Условие выбора' };
+      nodeData = { ...baseData, conditions: 'intent == "check_balance"\nintent != "check_balance"', content: 'Условие выбора' };
+    } else if (selectedNodeType === 'switch') {
+      nodeData = { ...baseData, conditions: 'intent == "check_balance" || intent == "transfer_money"\nintent == "greeting"\n// ELSE для всех остальных', content: 'Множественное условие' };
     } else if (selectedNodeType === 'api_call') {
       nodeData = { ...baseData, url: 'https://api.example.com', method: 'GET', content: 'API запрос' };
     } else if (selectedNodeType === 'llm_call') {
@@ -468,9 +496,23 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
               prompt: node.data.prompt,
               target_scenario: node.data.target_scenario
             },
-            next_nodes: edges
-              .filter(edge => edge.source === node.id)
-              .map(edge => edge.target)
+            next_nodes: (() => {
+              // ИСПРАВЛЕНО: Сортируем выходы по sourceHandle для гарантированного порядка
+              const nodeEdges = edges.filter(edge => edge.source === node.id);
+              
+              if (node.data.type === 'condition' || node.data.type === 'switch') {
+                // Для condition/switch узлов сортируем по индексу в sourceHandle
+                const sortedEdges = nodeEdges.sort((a, b) => {
+                  const indexA = parseInt(a.sourceHandle?.replace('output-', '') || '0');
+                  const indexB = parseInt(b.sourceHandle?.replace('output-', '') || '0');
+                  return indexA - indexB;
+                });
+                return sortedEdges.map(edge => edge.target);
+              } else {
+                // Для остальных узлов - как было
+                return nodeEdges.map(edge => edge.target);
+              }
+            })()
           };
         }),
         edges: edges.map(edge => ({
@@ -693,11 +735,17 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
         const generatedEdges: any[] = [];
         scenarioData.nodes.forEach((node: any) => {
           if (node.next_nodes && node.next_nodes.length > 0) {
-            node.next_nodes.forEach((targetId: string) => {
+            node.next_nodes.forEach((targetId: string, index: number) => {
+              // ИСПРАВЛЕНО: Добавляем sourceHandle с индексом для condition/switch узлов
+              const sourceHandle = (node.type === 'condition' || node.type === 'switch') 
+                ? `output-${index}` 
+                : undefined;
+                
               generatedEdges.push({
                 id: `${node.id}-${targetId}`,
                 source: node.id,
                 target: targetId,
+                sourceHandle: sourceHandle,
                 type: 'smoothstep',
                 animated: true
               });
@@ -749,17 +797,25 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           />
         </Form.Item>
 
-        {data.type === 'condition' && (
-          <Form.Item label="Условия (по одному на строку)">
+        {(data.type === 'condition' || data.type === 'switch') && (
+          <Form.Item label={`${data.type === 'switch' ? 'Switch' : 'Условия'} (по одному на строку)`}>
             <TextArea
-              value={(data.conditions || []).join('\n')}
+              value={Array.isArray(data.conditions) ? data.conditions.join('\n') : (data.conditions || '')}
               onChange={(e) => updateNodeData(selectedNode.id, { 
-                conditions: e.target.value.split('\n').filter(Boolean) 
+                conditions: e.target.value 
               })}
-              rows={4}
-              placeholder="условие 1&#10;условие 2&#10;комплексное условие"
+              rows={6}
+              placeholder={`intent == "check_balance" || intent == "transfer_money"
+intent == "greeting"
+// Комментарий
+intent != "unknown"
+# Еще комментарий
+// Последняя строка = ELSE (default)`}
               disabled={false}
             />
+            <div style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
+              💡 Поддерживается: OR (||), комментарии (//, #), последний выход = ELSE
+            </div>
           </Form.Item>
         )}
 
@@ -827,6 +883,40 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           </Form.Item>
         )}
 
+        {data.type === 'sub-flow' && (
+          <Form.Item label="Подсценарий">
+            <Select
+              value={data.target_scenario || ''}
+              onChange={(value) => updateNodeData(selectedNode.id, { target_scenario: value })}
+              placeholder="Выберите подсценарий"
+              showSearch
+              filterOption={(input, option) => {
+                const children = option?.children as string;
+                return children?.toLowerCase().includes(input.toLowerCase()) || false;
+              }}
+              disabled={false}
+            >
+              {availableScenarios.map(scenario => (
+                <Select.Option 
+                  key={scenario.id} 
+                  value={scenario.id}
+                  title={`${scenario.name} (${scenario.id})`}
+                >
+                  {scenario.name}
+                </Select.Option>
+              ))}
+            </Select>
+            {data.target_scenario && (
+              <div style={{ marginTop: 4, fontSize: '12px', color: '#666', fontFamily: 'monospace' }}>
+                ID: {data.target_scenario}
+              </div>
+            )}
+            <div style={{ marginTop: 8, fontSize: '12px', color: '#999' }}>
+              💡 После завершения подсценария вернется к следующему узлу
+            </div>
+          </Form.Item>
+        )}
+
         {data.type === 'api_call' && (
           <>
             <Form.Item label="URL">
@@ -874,7 +964,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           <Select 
             value={selectedNodeType} 
             onChange={setSelectedNodeType}
-            style={{ width: 150 }}
+            style={{ width: 220 }}
+            dropdownStyle={{ minWidth: 220 }}
           >
             <Option value="announce">Анонс</Option>
             <Option value="ask">Вопрос</Option>
@@ -882,9 +973,12 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
             <Option value="llm_call">Запрос в LLM</Option>
             <Option value="nlu-request">Запрос в NLU</Option>
             <Option value="scenario_jump">Переход в сценарий</Option>
+            <Option value="sub-flow">Подсценарий</Option>
             <Option value="transfer">Перевод на оператора</Option>
-            <Option value="end">Завершение диалога</Option>
+            <Option value="end">Завершение/Возврат</Option>
+            <Option value="end_dialog">Конец диалога</Option>
             <Option value="condition">Условие выбора</Option>
+            <Option value="switch">Множественное условие</Option>
           </Select>
           <Button type="primary" icon={<PlusOutlined />} onClick={addNode}>
             Добавить узел

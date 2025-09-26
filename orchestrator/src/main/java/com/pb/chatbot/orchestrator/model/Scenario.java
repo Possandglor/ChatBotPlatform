@@ -24,8 +24,15 @@ public class Scenario {
     @JsonProperty("nodes")
     public List<ScenarioBlock> nodes;
     
+    @JsonProperty("edges")
+    public List<Object> edges;
+    
     @JsonProperty("context")
     public Map<String, Object> context;
+    
+    public List<Object> getEdges() {
+        return edges;
+    }
     
     public ScenarioBlock findNode(String nodeId) {
         return nodes.stream()

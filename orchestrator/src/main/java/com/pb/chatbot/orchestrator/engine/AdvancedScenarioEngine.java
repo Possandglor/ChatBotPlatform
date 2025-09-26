@@ -12,6 +12,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -71,6 +72,9 @@ public class AdvancedScenarioEngine {
             case "condition":
                 return executeCondition(node, context, scenario);
                 
+            case "switch":
+                return executeSwitch(node, context, scenario);
+                
             case "api-request":
                 return executeApiRequest(node, context, scenario);
                 
@@ -82,6 +86,9 @@ public class AdvancedScenarioEngine {
                 
             case "end":
                 return executeEnd(node, context, scenario);
+                
+            case "end_dialog":
+                return executeEndDialog(node, context, scenario);
                 
             case "transfer":
                 return executeTransfer(node, context, scenario);
@@ -200,24 +207,63 @@ public class AdvancedScenarioEngine {
         } 
         // Новый формат: conditions в parameters + next_nodes
         else if (node.parameters != null && node.parameters.containsKey("conditions")) {
-            @SuppressWarnings("unchecked")
-            List<String> conditions = (List<String>) node.parameters.get("conditions");
+            Object conditionsObj = node.parameters.get("conditions");
+            List<String> conditions = null;
+            
+            // Поддержка как List<String>, так и String (многострочный текст)
+            if (conditionsObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<String> conditionsList = (List<String>) conditionsObj;
+                conditions = conditionsList;
+            } else if (conditionsObj instanceof String) {
+                // Разбиваем многострочный текст на отдельные условия
+                String conditionsText = (String) conditionsObj;
+                conditions = Arrays.asList(conditionsText.split("\\r?\\n"));
+            }
             
             if (conditions != null && !conditions.isEmpty()) {
                 // Проверяем каждое условие по порядку
                 for (int i = 0; i < conditions.size(); i++) {
-                    String condition = conditions.get(i);
-                    boolean conditionResult = evaluateCondition(condition, context);
+                    String condition = conditions.get(i).trim();
                     
-                    if (conditionResult && node.nextNodes != null && i < node.nextNodes.size()) {
-                        nextNode = node.nextNodes.get(i);
-                        break;
+                    // Пропускаем пустые строки и комментарии
+                    if (condition.isEmpty() || condition.startsWith("//") || condition.startsWith("#")) {
+                        continue;
+                    }
+                    
+                    boolean conditionResult = evaluateCondition(condition, context);
+                    LOG.infof("Condition %d: %s -> %s", i, condition, conditionResult);
+                    
+                    if (conditionResult) {
+                        // ИСПРАВЛЕНО: Ищем целевой узел по sourceHandle в edges
+                        nextNode = findTargetBySourceHandle(node.id, "output-" + i, scenario);
+                        if (nextNode != null) {
+                            LOG.infof("Taking branch %d to node: %s", i, nextNode);
+                            break;
+                        }
+                        
+                        // Fallback: используем next_nodes если edges нет
+                        if (node.nextNodes != null && i < node.nextNodes.size()) {
+                            nextNode = node.nextNodes.get(i);
+                            LOG.infof("Fallback: Taking branch %d to node: %s", i, nextNode);
+                            break;
+                        }
                     }
                 }
                 
-                // Если ни одно условие не сработало, берем последний next_node как default
-                if (nextNode == null && node.nextNodes != null && !node.nextNodes.isEmpty()) {
-                    nextNode = node.nextNodes.get(node.nextNodes.size() - 1);
+                // ELSE логика: Если ни одно условие не сработало
+                if (nextNode == null) {
+                    // Ищем ELSE выход (последний по счету)
+                    int elseIndex = conditions.size(); // Пропускаем комментарии, поэтому берем размер условий
+                    nextNode = findTargetBySourceHandle(node.id, "output-" + elseIndex, scenario);
+                    
+                    // Fallback: используем последний next_node
+                    if (nextNode == null && node.nextNodes != null && !node.nextNodes.isEmpty()) {
+                        int elseNodeIndex = node.nextNodes.size() - 1;
+                        nextNode = node.nextNodes.get(elseNodeIndex);
+                    }
+                    
+                    LOG.infof("No conditions matched, taking ELSE branch to node: %s", nextNode);
                 }
             }
         }
@@ -535,6 +581,27 @@ public class AdvancedScenarioEngine {
         return createResponse("end", message, null, context);
     }
     
+    // 🛑 END_DIALOG - Принудительное завершение диалога (игнорирует sub-flow)
+    private Map<String, Object> executeEndDialog(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
+        LOG.infof("Force ending dialog (ignoring sub-flow)");
+        
+        // ВСЕГДА завершаем диалог, даже в sub-flow
+        context.put("scenario_completed", true);
+        context.put("dialog_ended", true);
+        context.put("waiting_for_input", false);  // Останавливаем ожидание ввода
+        
+        // Очищаем стек вызовов
+        context.remove("call_stack");
+        context.put("in_sub_flow", false);
+        
+        String message = "Диалог завершен.";
+        if (node.parameters != null) {
+            message = (String) node.parameters.getOrDefault("message", message);
+        }
+        
+        return createResponse("end_dialog", message, null, context);
+    }
+    
     // 👤 TRANSFER - Перевод на оператора
     private Map<String, Object> executeTransfer(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
         LOG.infof("Transferring to operator");
@@ -574,6 +641,65 @@ public class AdvancedScenarioEngine {
         }
         
         return createResponse("llm_call", "LLM запрос выполнен", nextNode, context);
+    }
+    
+    // 🔀 SWITCH - Многоветвенное условное ветвление (улучшенная версия condition)
+    private Map<String, Object> executeSwitch(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
+        if (node.parameters == null || !node.parameters.containsKey("conditions")) {
+            LOG.errorf("Switch node %s has no conditions", node.id);
+            return createResponse("switch", "Ошибка конфигурации switch", null, context);
+        }
+        
+        @SuppressWarnings("unchecked")
+        List<String> conditions = (List<String>) node.parameters.get("conditions");
+        
+        if (conditions == null || conditions.isEmpty()) {
+            LOG.errorf("Switch node %s has empty conditions", node.id);
+            return createResponse("switch", "Пустые условия switch", null, context);
+        }
+        
+        String nextNode = null;
+        
+        // Проверяем каждое условие по порядку
+        for (int i = 0; i < conditions.size(); i++) {
+            String condition = conditions.get(i).trim();
+            
+            // Пропускаем пустые строки и комментарии
+            if (condition.isEmpty() || condition.startsWith("//") || condition.startsWith("#")) {
+                continue;
+            }
+            
+            boolean conditionResult = evaluateCondition(condition, context);
+            LOG.infof("Switch condition %d: %s -> %s", i, condition, conditionResult);
+            
+            if (conditionResult && node.nextNodes != null && i < node.nextNodes.size()) {
+                nextNode = node.nextNodes.get(i);
+                LOG.infof("Switch taking branch %d to node: %s", i, nextNode);
+                break;
+            }
+        }
+        
+        // ELSE логика: Если ни одно условие не сработало, берем последний next_node как default
+        if (nextNode == null && node.nextNodes != null && !node.nextNodes.isEmpty()) {
+            int elseIndex = node.nextNodes.size() - 1;
+            nextNode = node.nextNodes.get(elseIndex);
+            LOG.infof("Switch: No conditions matched, taking DEFAULT branch %d to node: %s", elseIndex, nextNode);
+        }
+        
+        if (nextNode == null) {
+            LOG.errorf("Switch node %s has no valid next nodes", node.id);
+            return createResponse("switch", "Нет доступных переходов", null, context);
+        }
+        
+        updateContext(context, nextNode);
+        
+        // Сразу выполняем следующий узел
+        ScenarioBlock nextNodeBlock = findNodeById(scenario, nextNode);
+        if (nextNodeBlock != null) {
+            return executeNodeByType(nextNodeBlock, "", context, scenario);
+        }
+        
+        return createResponse("switch", "Switch executed", nextNode, context);
     }
     
     // 🔄 SUB-FLOW - Переход в подсценарий с возвратом
@@ -819,6 +945,19 @@ public class AdvancedScenarioEngine {
         LOG.infof("Context intent: %s", context.get("intent"));
         
         try {
+            // НОВОЕ: Поддержка OR условий (||)
+            if (condition.contains("||")) {
+                String[] orParts = condition.split("\\|\\|");
+                for (String orPart : orParts) {
+                    if (evaluateCondition(orPart.trim(), context)) {
+                        LOG.infof("OR condition matched: %s", orPart.trim());
+                        return true;
+                    }
+                }
+                LOG.infof("No OR conditions matched");
+                return false;
+            }
+            
             // ИСПРАВЛЕНО: Универсальная обработка условий
             
             // Обработка равенства строк: context.intent == "value" или intent == "value"
@@ -883,6 +1022,28 @@ public class AdvancedScenarioEngine {
             LOG.errorf(e, "Error evaluating condition: %s", condition);
             return false;
         }
+    }
+    
+    // Поиск целевого узла по sourceHandle в edges
+    private String findTargetBySourceHandle(String sourceNodeId, String sourceHandle, Scenario scenario) {
+        // Пытаемся найти в edges если они есть
+        if (scenario.getEdges() != null) {
+            for (Object edgeObj : scenario.getEdges()) {
+                if (edgeObj instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> edge = (Map<String, Object>) edgeObj;
+                    
+                    String source = (String) edge.get("source");
+                    String handle = (String) edge.get("sourceHandle");
+                    String target = (String) edge.get("target");
+                    
+                    if (sourceNodeId.equals(source) && sourceHandle.equals(handle)) {
+                        return target;
+                    }
+                }
+            }
+        }
+        return null;
     }
     
     private String getConditionValue(String condition, Map<String, Object> context) {
