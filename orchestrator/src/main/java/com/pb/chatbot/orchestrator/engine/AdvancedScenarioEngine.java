@@ -1,9 +1,11 @@
 package com.pb.chatbot.orchestrator.engine;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pb.chatbot.orchestrator.client.GeminiClient;
 import com.pb.chatbot.orchestrator.model.Scenario;
 import com.pb.chatbot.orchestrator.model.ScenarioBlock;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.net.URI;
@@ -23,6 +25,9 @@ import java.util.Set;
 public class AdvancedScenarioEngine {
     
     private static final Logger LOG = Logger.getLogger(AdvancedScenarioEngine.class);
+    
+    @Inject
+    GeminiClient geminiClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -699,20 +704,39 @@ public class AdvancedScenarioEngine {
     
     // 🤖 LLM_CALL - Запрос к LLM модели
     private Map<String, Object> executeLlmCall(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
-        LOG.infof("Executing LLM call");
+        LOG.infof("Executing LLM call for node: %s", node.id);
         
         String prompt = "Ответьте на вопрос пользователя";
         if (node.parameters != null) {
             prompt = (String) node.parameters.getOrDefault("prompt", prompt);
         }
         
-        // Заглушка для LLM вызова
-        context.put("llm_response", "Ответ от LLM модели");
+        // Подставляем переменные из контекста в промпт
+        prompt = substituteVariables(prompt, context);
+        
+        try {
+            // Вызываем Gemini API через инжектированный клиент
+            String llmResponse = geminiClient.generateContent(prompt);
+            
+            // Сохраняем ответ с ID узла для множественных LLM вызовов
+            String responseKey = "llm_response_" + node.id;
+            context.put(responseKey, llmResponse);
+            context.put("llm_response", llmResponse); // Для обратной совместимости
+            
+            LOG.infof("LLM response saved to context key: %s", responseKey);
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Error calling LLM API for node %s", node.id);
+            String errorResponse = "Извините, произошла ошибка при обращении к AI модели.";
+            String responseKey = "llm_response_" + node.id;
+            context.put(responseKey, errorResponse);
+            context.put("llm_response", errorResponse);
+        }
         
         String nextNode = getNextNode(node, context);
         updateContext(context, nextNode);
         
-        // Системный узел - сразу выполняем следующий
+        // Системный узел - сразу выполняем следующий БЕЗ сообщения пользователю
         if (nextNode != null) {
             ScenarioBlock nextNodeBlock = findNodeById(scenario, nextNode);
             if (nextNodeBlock != null) {
@@ -720,7 +744,9 @@ public class AdvancedScenarioEngine {
             }
         }
         
-        return createResponse("llm_call", "LLM запрос выполнен", nextNode, context);
+        // Если нет следующего узла - завершаем сценарий
+        context.put("scenario_completed", true);
+        return createResponse("llm_call", "", null, context);
     }
     
     // 🔀 SWITCH - Многоветвенное условное ветвление (улучшенная версия condition)

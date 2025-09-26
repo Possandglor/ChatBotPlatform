@@ -6,6 +6,7 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -31,7 +32,8 @@ public class OrchestratorController {
     @RestClient
     ScenarioServiceClient scenarioClient;
     
-    private final AdvancedScenarioEngine scenarioEngine = new AdvancedScenarioEngine();
+    @Inject
+    AdvancedScenarioEngine scenarioEngine;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -492,8 +494,7 @@ public class OrchestratorController {
             // Получаем начальное сообщение от entry point сценария
             // Используем временный контекст для получения сообщения
             Map<String, Object> tempContext = new HashMap<>();
-            AdvancedScenarioEngine engine = new AdvancedScenarioEngine();
-            return engine.getInitialMessageFromEntryPoint(tempContext);
+            return scenarioEngine.getInitialMessageFromEntryPoint(tempContext);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to get initial message from entry point scenario");
             return "Привет! Я готов к тестированию. Напишите что-нибудь для начала диалога.";
@@ -562,8 +563,7 @@ public class OrchestratorController {
             }
             
             // Выполняем сценарий через AdvancedScenarioEngine
-            AdvancedScenarioEngine engine = new AdvancedScenarioEngine();
-            String response = engine.processMessage(sessionId, userMessage, context);
+            String response = scenarioEngine.processMessage(sessionId, userMessage, context);
             
             // Сохраняем обновленный контекст
             saveSessionContext(sessionId, context);
@@ -578,9 +578,8 @@ public class OrchestratorController {
 
     private void initializeContextFromEntryPoint(Map<String, Object> context) {
         try {
-            AdvancedScenarioEngine engine = new AdvancedScenarioEngine();
             // Инициализируем контекст от entry point, но не возвращаем сообщение
-            engine.getInitialMessageFromEntryPoint(context);
+            scenarioEngine.getInitialMessageFromEntryPoint(context);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to initialize context from entry point");
         }
@@ -613,7 +612,7 @@ public class OrchestratorController {
         // Продолжаем выполнение сценария без ввода пользователя
         String botResponse = continueScenarioExecution(sessionId);
         
-        // Получаем контекст для node_type
+        // ИСПРАВЛЕНО: Получаем контекст ПОСЛЕ выполнения сценария
         Map<String, Object> sessionContext = sessionContexts.getOrDefault(sessionId, new HashMap<>());
         
         if (botResponse != null && !botResponse.trim().isEmpty()) {
@@ -666,8 +665,7 @@ public class OrchestratorController {
             }
             
             // Выполняем следующий узел сценария
-            AdvancedScenarioEngine engine = new AdvancedScenarioEngine();
-            String response = engine.continueExecution(sessionId, context);
+            String response = scenarioEngine.continueExecution(sessionId, context);
             
             // Сохраняем обновленный контекст
             saveSessionContext(sessionId, context);
@@ -694,6 +692,7 @@ public class OrchestratorController {
 
     private void saveSessionContext(String sessionId, Map<String, Object> context) {
         sessionContexts.put(sessionId, context);
+        LOG.debugf("Saved context for session %s: %s", sessionId, context.keySet());
     }
 
     // === ORCHESTRATOR PROCESS ENDPOINT ===

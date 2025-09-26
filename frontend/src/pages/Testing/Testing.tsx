@@ -89,6 +89,11 @@ const Testing: React.FC = () => {
         } else if (nodeType === 'transfer') {
           console.log('Передача оператору');
         }
+        
+        // ИСПРАВЛЕНО: Обновляем контекст из ответа
+        if ((response.data as any).context) {
+          setContext((response.data as any).context);
+        }
       }
     } catch (error) {
       console.error('Ошибка продолжения сессии:', error);

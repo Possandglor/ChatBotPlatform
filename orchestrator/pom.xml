@@ -63,6 +63,13 @@
             <artifactId>quarkus-junit5</artifactId>
             <scope>test</scope>
         </dependency>
+        
+        <!-- Google Cloud Vertex AI for Gemini - упрощенная версия -->
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-vertexai</artifactId>
+            <version>1.30.0</version>
+        </dependency>
     </dependencies>
 
     <build>
