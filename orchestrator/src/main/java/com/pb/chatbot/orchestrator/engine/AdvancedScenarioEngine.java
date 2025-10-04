@@ -2045,7 +2045,9 @@ public class AdvancedScenarioEngine {
                     return (String) result.getOrDefault("message", "Узел выполнен");
                 } else {
                     LOG.errorf("Node not found: %s", currentNodeId);
-                    return "Узел не найден: " + currentNodeId;
+                    // ИСПРАВЛЕНИЕ: Очищаем current_node чтобы избежать бесконечного цикла
+                    context.put("current_node", null);
+                    return "Узел не найден: " + currentNodeId + ". Сценарий завершен.";
                 }
             }
             
@@ -2066,7 +2068,9 @@ public class AdvancedScenarioEngine {
             // Находим текущий узел
             Map<String, Object> node = findNodeById(nodes, startNodeId);
             if (node == null) {
-                return "Узел не найден.";
+                // ИСПРАВЛЕНИЕ: Очищаем current_node при ошибке
+                context.put("current_node", null);
+                return "Узел не найден: " + startNodeId + ". Сценарий завершен.";
             }
             
             String type = (String) node.get("type");

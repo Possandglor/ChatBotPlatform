@@ -50,60 +50,53 @@ public class ScenarioController {
     public Response getAllScenarios(@QueryParam("search") String search, @Context HttpHeaders headers) {
         // Проверяем header для ветки
         String branchName = headers.getHeaderString("X-Branch");
-        
-        if (branchName != null && !branchName.equals("main")) {
-            // Получаем сценарии из глобальной ветки
-            try {
-                WorkspaceBranch branch = workspaceBranchService.getBranch(branchName);
-                if (branch != null) {
-                    List<Map<String, Object>> branchScenarios = new ArrayList<>();
-                    
-                    for (Map.Entry<String, Map<String, Object>> entry : branch.scenarios.entrySet()) {
-                        Map<String, Object> scenarioData = entry.getValue();
-                        Map<String, Object> scenarioInfo = new HashMap<>();
-                        
-                        scenarioInfo.put("id", entry.getKey());
-                        scenarioInfo.put("name", scenarioData.get("name"));
-                        scenarioInfo.put("description", scenarioData.get("description"));
-                        scenarioInfo.put("version", scenarioData.get("version"));
-                        scenarioInfo.put("language", scenarioData.get("language"));
-                        scenarioInfo.put("is_entry_point", scenarioData.get("is_entry_point"));
-                        scenarioInfo.put("scenario_data", scenarioData.get("scenario_data"));
-                        scenarioInfo.put("_branch_info", Map.of(
-                            "branch_name", branchName,
-                            "source", "workspace_branch"
-                        ));
-                        branchScenarios.add(scenarioInfo);
-                    }
-                    
-                    return Response.ok(Map.of(
-                        "scenarios", branchScenarios,
-                        "count", branchScenarios.size(),
-                        "branch", branchName,
-                        "timestamp", System.currentTimeMillis()
-                    )).build();
-                }
-            } catch (Exception e) {
-                LOG.errorf(e, "Error getting scenarios from branch %s", branchName);
-            }
+        if (branchName == null) {
+            branchName = "main"; // По умолчанию main
         }
-        
-        // Получаем сценарии из main ветки (обычная загрузка)
+
+        // Получаем сценарии из указанной ветки (включая main)
         try {
-            List<ScenarioInfo> scenarios = search != null ? 
-                scenarioService.searchScenarios(search) : 
-                scenarioService.getAllScenarios();
-            
-            return Response.ok(Map.of(
-                "scenarios", scenarios,
-                "count", scenarios.size(),
-                "timestamp", System.currentTimeMillis()
-            )).build();
-            
+            WorkspaceBranch branch = workspaceBranchService.getBranch(branchName);
+            if (branch != null) {
+                List<Map<String, Object>> branchScenarios = new ArrayList<>();
+                
+                for (Map.Entry<String, Map<String, Object>> entry : branch.scenarios.entrySet()) {
+                    Map<String, Object> scenarioData = entry.getValue();
+                    Map<String, Object> scenarioInfo = new HashMap<>();
+                    
+                    scenarioInfo.put("id", entry.getKey());
+                    scenarioInfo.put("name", scenarioData.get("name"));
+                    scenarioInfo.put("description", scenarioData.get("description"));
+                    scenarioInfo.put("version", scenarioData.get("version"));
+                    scenarioInfo.put("language", scenarioData.get("language"));
+                    scenarioInfo.put("category", scenarioData.get("category"));
+                    scenarioInfo.put("tags", scenarioData.get("tags"));
+                    scenarioInfo.put("is_active", scenarioData.get("is_active"));
+                    scenarioInfo.put("is_entry_point", scenarioData.get("is_entry_point"));
+                    scenarioInfo.put("created_at", scenarioData.get("created_at"));
+                    scenarioInfo.put("updated_at", scenarioData.get("updated_at"));
+                    scenarioInfo.put("created_by", scenarioData.get("created_by"));
+                    scenarioInfo.put("scenario_data", scenarioData.get("scenario_data"));
+                    
+                    branchScenarios.add(scenarioInfo);
+                }
+                
+                return Response.ok(Map.of(
+                    "scenarios", branchScenarios,
+                    "count", branchScenarios.size(),
+                    "branch", branchName,
+                    "timestamp", System.currentTimeMillis()
+                )).build();
+            } else {
+                // Ветка не найдена
+                return Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("error", "Branch not found: " + branchName))
+                    .build();
+            }
         } catch (Exception e) {
-            LOG.errorf(e, "Error getting scenarios");
+            LOG.errorf(e, "Error getting scenarios from branch %s", branchName);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                .entity(Map.of("error", "Failed to get scenarios"))
+                .entity(Map.of("error", "Failed to get scenarios from branch"))
                 .build();
         }
     }
@@ -171,51 +164,33 @@ public class ScenarioController {
         
         // Проверяем header для ветки
         String branchName = headers.getHeaderString("X-Branch");
-        
-        if (branchName != null && !branchName.equals("main")) {
-            // Сохраняем в глобальную ветку
-            try {
-                // Создаем полный объект сценария для ветки
-                Map<String, Object> fullScenario = new HashMap<>();
-                fullScenario.put("id", id);
-                fullScenario.put("name", scenario.name);
-                fullScenario.put("description", scenario.description);
-                fullScenario.put("version", scenario.version);
-                fullScenario.put("language", scenario.language);
-                fullScenario.put("is_entry_point", scenario.isEntryPoint);
-                fullScenario.put("scenario_data", scenario.scenarioData);
-                
-                workspaceBranchService.updateScenarioInBranch(id, branchName, fullScenario, "developer");
-                
-                return Response.ok(Map.of(
-                    "id", id,
-                    "message", "Scenario updated in branch " + branchName,
-                    "branch", branchName
-                )).build();
-            } catch (Exception e) {
-                LOG.errorf(e, "Error updating scenario in branch %s", branchName);
-                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(Map.of("error", "Failed to update scenario in branch"))
-                    .build();
-            }
+        if (branchName == null) {
+            branchName = "main"; // По умолчанию main
         }
-        
-        // Сохраняем в main ветку (обычное обновление)
+
+        // Сохраняем в указанную ветку (включая main)
         try {
-            ScenarioInfo updated = scenarioService.updateScenario(id, scenario);
+            // Создаем полный объект сценария для ветки
+            Map<String, Object> fullScenario = new HashMap<>();
+            fullScenario.put("id", id);
+            fullScenario.put("name", scenario.name);
+            fullScenario.put("description", scenario.description);
+            fullScenario.put("version", scenario.version);
+            fullScenario.put("language", scenario.language);
+            fullScenario.put("is_entry_point", scenario.isEntryPoint);
+            fullScenario.put("scenario_data", scenario.scenarioData);
             
-            if (updated == null) {
-                return Response.status(Response.Status.NOT_FOUND)
-                    .entity(Map.of("error", "Scenario not found"))
-                    .build();
-            }
+            workspaceBranchService.updateScenarioInBranch(id, branchName, fullScenario, "developer");
             
-            return Response.ok(updated).build();
-            
+            return Response.ok(Map.of(
+                "id", id,
+                "message", "Scenario updated in branch " + branchName,
+                "branch", branchName
+            )).build();
         } catch (Exception e) {
-            LOG.errorf(e, "Error updating scenario");
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(Map.of("error", "Failed to update scenario"))
+            LOG.errorf(e, "Error updating scenario in branch %s", branchName);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(Map.of("error", "Failed to update scenario in branch"))
                 .build();
         }
     }
