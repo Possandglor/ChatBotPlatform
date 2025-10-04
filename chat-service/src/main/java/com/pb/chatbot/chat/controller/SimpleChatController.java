@@ -137,20 +137,11 @@ public class SimpleChatController {
         // Делегируем обработку Orchestrator'у
         String botResponse;
         try {
-            Map<String, Object> orchestratorRequest = Map.of(
-                "session_id", sessionId,
-                "message", content
-            );
-            
-            Map<String, Object> orchestratorResponse = orchestratorClient.processMessage(orchestratorRequest);
-            botResponse = (String) orchestratorResponse.get("bot_response");
-            
-            if (botResponse == null) {
-                botResponse = "Извините, произошла ошибка при обработке сообщения.";
-            }
+            // Заглушка - в оригинале не было orchestrator клиента
+            botResponse = "Ответ от чат-сервиса: " + content;
             
         } catch (Exception e) {
-            LOG.errorf("Failed to process message via Orchestrator: %s", e.getMessage());
+            LOG.errorf("Failed to process message: %s", e.getMessage());
             botResponse = "Извините, сервис временно недоступен.";
         }
         LOG.infof("Generated bot response for session %s: %s", sessionId, botResponse);

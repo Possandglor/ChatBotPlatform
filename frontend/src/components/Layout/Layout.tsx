@@ -1,6 +1,7 @@
 import React from 'react';
-import { Layout as AntLayout, Menu } from 'antd';
+import { Layout as AntLayout, Menu, Space } from 'antd';
 import { useNavigate, useLocation } from 'react-router-dom';
+import GlobalBranchSelector from '../GlobalBranchSelector';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -48,8 +49,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </Sider>
       
       <AntLayout>
-        <Header style={{ background: '#fff', padding: '0 16px' }}>
+        <Header style={{ background: '#fff', padding: '0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ margin: 0 }}>ChatBot Platform</h2>
+          <GlobalBranchSelector />
         </Header>
         
         <Content style={{ margin: '16px', padding: '16px', background: '#fff' }}>

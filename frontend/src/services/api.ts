@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useBranchStore } from '../store/branchStore';
 
 const api = axios.create({
   baseURL: 'http://localhost:8092/api/v1',
@@ -11,6 +12,15 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    
+    // Добавляем X-Branch header для всех запросов кроме /branches
+    if (!config.url?.includes('/branches')) {
+      const currentBranch = useBranchStore.getState().currentBranch;
+      if (currentBranch && currentBranch !== 'main') {
+        config.headers['X-Branch'] = currentBranch;
+      }
+    }
+    
     return config;
   },
   (error) => {
@@ -87,17 +97,17 @@ export const apiService = {
   },
 
   // Chat methods
-  createChatSession: async () => {
-    const response = await api.post('/chat/sessions', {});
+  createChatSession: async (headers?: Record<string, string>) => {
+    const response = await api.post('/chat/sessions', {}, { headers });
     return { data: response }; // Wrap response in data object for compatibility
   },
 
-  sendMessage: async (sessionId: string, message: string) => {
+  sendMessage: async (sessionId: string, message: string, headers?: Record<string, string>) => {
     // Call chat service directly to process message and get bot response
     const response = await api.post('/chat/messages', {
       session_id: sessionId,
       content: message
-    });
+    }, { headers });
     return { data: response }; // Wrap response in data object for compatibility
   },
 

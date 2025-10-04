@@ -270,46 +270,6 @@ public class OrchestratorController {
         )).build();
     }
 
-    @GET
-    @Path("/scenarios")
-    public Response getScenarios() {
-        try {
-            Map<String, Object> response = scenarioClient.getAllScenarios(null);
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> scenarios = (List<Map<String, Object>>) response.get("scenarios");
-            if (scenarios == null) scenarios = new ArrayList<>();
-            
-            return Response.ok(Map.of(
-                "scenarios", scenarios,
-                "count", scenarios.size()
-            )).build();
-        } catch (Exception e) {
-            LOG.errorf(e, "Error getting scenarios");
-            return Response.ok(Map.of(
-                "scenarios", new ArrayList<>(),
-                "count", 0
-            )).build();
-        }
-    }
-
-    @POST
-    @Path("/scenarios")
-    public Response createScenario(Map<String, Object> request) {
-        return proxyPost("http://localhost:8093/api/v1/scenarios", request);
-    }
-    
-    @PUT
-    @Path("/scenarios/{id}")
-    public Response updateScenario(@PathParam("id") String id, Map<String, Object> request) {
-        return proxyPut("http://localhost:8093/api/v1/scenarios/" + id, request);
-    }
-    
-    @DELETE
-    @Path("/scenarios/{id}")
-    public Response deleteScenario(@PathParam("id") String id) {
-        return proxyDelete("http://localhost:8093/api/v1/scenarios/" + id);
-    }
-
     // NLU proxy
     @GET
     @Path("/nlu/status")
@@ -634,14 +594,6 @@ public class OrchestratorController {
         if (sessionContext == null) {
             sessionContext = new HashMap<>();
         }
-        
-        Map<String, Object> contextMap = new HashMap<>();
-        contextMap.put("intent", sessionContext.getOrDefault("intent", ""));
-        contextMap.put("entities", sessionContext.getOrDefault("entities", new ArrayList<>()));
-        contextMap.put("last_message", sessionContext.getOrDefault("last_message", ""));
-        contextMap.put("last_answer", sessionContext.getOrDefault("last_answer", ""));
-        contextMap.put("current_node", sessionContext.getOrDefault("current_node", ""));
-        contextMap.put("scenario_id", sessionContext.getOrDefault("scenario_id", ""));
         
         Map<String, Object> responseMap = new HashMap<>();
         responseMap.put("session_id", sessionId);

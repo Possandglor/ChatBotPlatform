@@ -2,6 +2,7 @@ package com.pb.chatbot.scenario.service;
 
 import com.pb.chatbot.scenario.model.ScenarioInfo;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.time.LocalDateTime;
@@ -14,9 +15,20 @@ public class ScenarioManagementService {
     private static final Logger LOG = Logger.getLogger(ScenarioManagementService.class);
     private final Map<String, ScenarioInfo> scenarios = new ConcurrentHashMap<>();
     
+    @Inject
+    BranchService branchService;
+    
     public ScenarioManagementService() {
         // Создаем тестовые сценарии
         createTestScenarios();
+        
+        // Инициализируем main ветки для существующих сценариев
+        initializeMainBranches();
+    }
+    
+    private void initializeMainBranches() {
+        // Отложенная инициализация через PostConstruct
+        // Пока что оставим пустым, инициализация будет при первом обращении
     }
     
     public List<ScenarioInfo> getAllScenarios() {
@@ -24,7 +36,14 @@ public class ScenarioManagementService {
     }
     
     public ScenarioInfo getScenario(String id) {
-        return scenarios.get(id);
+        ScenarioInfo scenario = scenarios.get(id);
+        
+        // Ленивая инициализация main ветки
+        if (scenario != null && branchService != null) {
+            branchService.initializeMainBranch(id, scenario.scenarioData);
+        }
+        
+        return scenario;
     }
     
     public ScenarioInfo createScenario(ScenarioInfo scenario) {
@@ -36,8 +55,13 @@ public class ScenarioManagementService {
         scenario.updatedAt = LocalDateTime.now();
         
         scenarios.put(scenario.id, scenario);
-        LOG.infof("Created scenario: %s", scenario.name);
         
+        // Инициализируем main ветку для нового сценария
+        if (branchService != null && scenario.scenarioData != null) {
+            branchService.initializeMainBranch(scenario.id, scenario.scenarioData);
+        }
+        
+        LOG.infof("Created scenario: %s", scenario.id);
         return scenario;
     }
     

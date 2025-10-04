@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Card, Input, Button, Space, Typography, Tag, Alert } from 'antd';
 import { SendOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
 import { apiService } from '../../services/api';
+import { useBranchStore } from '../../store/branchStore';
 
 const { Text, Title } = Typography;
 
@@ -13,6 +14,7 @@ interface Message {
 }
 
 const Testing: React.FC = () => {
+  const { currentBranch } = useBranchStore();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -31,7 +33,9 @@ const Testing: React.FC = () => {
   const createSession = async () => {
     try {
       setLoading(true);
-      const response = await apiService.createChatSession();
+      // Передаем текущую ветку в заголовке
+      const headers = currentBranch !== 'main' ? { 'X-Branch': currentBranch } : {};
+      const response = await apiService.createChatSession(headers);
       const newSessionId = (response.data as any).session_id;
       const initialMessage = (response.data as any).initial_message || 'Привет! Я готов к тестированию. Напишите что-нибудь для начала диалога.';
       const nodeType = (response.data as any).node_type;
@@ -118,7 +122,9 @@ const Testing: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await apiService.sendMessage(sessionId, inputValue);
+      // Передаем текущую ветку в заголовке
+      const headers = currentBranch !== 'main' ? { 'X-Branch': currentBranch } : {};
+      const response = await apiService.sendMessage(sessionId, inputValue, headers);
       const botResponse = (response.data as any).bot_response;
       const nodeType = (response.data as any).node_type;
       

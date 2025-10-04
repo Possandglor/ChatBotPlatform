@@ -17,6 +17,7 @@ import 'reactflow/dist/style.css';
 import { Card, Button, Space, Select, Input, message, Tag, Drawer, Form, Modal, List, Checkbox } from 'antd';
 import { PlusOutlined, SaveOutlined, SettingOutlined, ExportOutlined, ImportOutlined, FolderOpenOutlined, DeleteOutlined } from '@ant-design/icons';
 import { scenarioService } from '../services/scenarioService';
+import { useBranchStore } from '../store/branchStore';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -198,10 +199,11 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
   const [editingScenarioId, setEditingScenarioId] = useState<string | null>(null);
   const [jsonEditorVisible, setJsonEditorVisible] = useState(false);
   const [jsonContent, setJsonContent] = useState('');
+  const { currentBranch } = useBranchStore();
 
   useEffect(() => {
     loadAvailableScenarios();
-  }, []);
+  }, [currentBranch]); // Перезагружаем при смене ветки
 
   // Синхронизация selectedNode с обновленными nodes
   useEffect(() => {
@@ -680,6 +682,96 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
     }
   };
 
+  // Функции для работы с ветками
+  const handleBranchChange = async (branchName: string) => {
+    if (!editingScenarioId) return;
+    
+    try {
+      setCurrentBranch(branchName);
+      
+      // Загружаем сценарий из выбранной ветки
+      const scenarioFromBranch = await branchService.getScenarioFromBranch(editingScenarioId, branchName);
+      if (scenarioFromBranch && scenarioFromBranch.scenarioData) {
+        loadScenario(scenarioFromBranch);
+        message.success(`Переключено на ветку: ${branchName}`);
+      }
+    } catch (error) {
+      console.error('Error switching branch:', error);
+      message.error('Ошибка переключения ветки');
+    }
+  };
+
+  const handleBranchCreated = () => {
+    // Обновляем список веток после создания новой
+    message.info('Ветка создана успешно');
+  };
+
+  const saveToBranch = async () => {
+    if (!editingScenarioId || !currentBranch) return;
+
+    const scenarioData = {
+      start_node: nodes.length > 0 ? nodes[0].id : 'start',
+      nodes: nodes.map(node => {
+        const baseNode = {
+          id: node.id,
+          type: node.data.type,
+          content: node.data.content,
+          position: node.position
+        };
+
+        return {
+          ...baseNode,
+          parameters: {
+            message: node.data.content,
+            question: node.data.content,
+            conditions: node.data.conditions,
+            url: node.data.url,
+            method: node.data.method,
+            body: node.data.body,
+            headers: node.data.headers,
+            prompt: node.data.prompt,
+            target_scenario: node.data.target_scenario,
+            operations: node.data.operations
+          },
+          next_nodes: (() => {
+            const nodeEdges = edges.filter(edge => edge.source === node.id);
+            
+            if (node.data.type === 'condition' || node.data.type === 'switch') {
+              const sortedEdges = nodeEdges.sort((a, b) => {
+                const indexA = parseInt(a.sourceHandle?.replace('output-', '') || '0');
+                const indexB = parseInt(b.sourceHandle?.replace('output-', '') || '0');
+                return indexA - indexB;
+              });
+              return sortedEdges.map(edge => edge.target);
+            } else {
+              return nodeEdges.map(edge => edge.target);
+            }
+          })()
+        };
+      }),
+      edges: edges.map(edge => ({
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle
+      }))
+    };
+
+    try {
+      // Всегда сохраняем через scenarioService - он автоматически учтет X-Branch header
+      await scenarioService.updateScenario(editingScenarioId, {
+        name: scenarioName,
+        description: scenarioDescription,
+        scenario_data: scenarioData
+      });
+      
+      message.success(`Сценарий сохранен в ветку: ${currentBranch}`);
+    } catch (error) {
+      console.error('Error saving to branch:', error);
+      message.error('Ошибка сохранения в ветку');
+    }
+  };
+
   const loadScenario = (scenario: any) => {
     try {
       const scenarioData = scenario.scenario_data;
@@ -1045,6 +1137,7 @@ intent != "unknown"
     <div style={{ height: '600px', border: '1px solid #d9d9d9', borderRadius: 8 }}>
       <div style={{ padding: 16, borderBottom: '1px solid #d9d9d9', background: '#fafafa' }}>
         <Space>
+          
           <Select 
             value={selectedNodeType} 
             onChange={setSelectedNodeType}
@@ -1068,8 +1161,8 @@ intent != "unknown"
           <Button type="primary" icon={<PlusOutlined />} onClick={addNode}>
             Добавить узел
           </Button>
-          <Button type="default" icon={<SaveOutlined />} onClick={() => setSaveModalVisible(true)}>
-            {editingScenarioId ? 'Обновить' : 'Сохранить'}
+          <Button type="default" icon={<SaveOutlined />} onClick={saveToBranch}>
+            Сохранить в {currentBranch}
           </Button>
           <Button type="default" icon={<PlusOutlined />} onClick={createNewScenario}>
             Новый

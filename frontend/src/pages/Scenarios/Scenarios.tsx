@@ -4,6 +4,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, NodeIndexOutli
 import { scenarioService } from '../../services/scenarioService';
 import VisualScenarioEditor from '../../components/VisualScenarioEditor';
 import { ApiNodeForm } from '../../components/ApiNodeForm';
+import { useBranchStore } from '../../store/branchStore';
 
 interface Scenario {
   id: string;
@@ -16,6 +17,7 @@ interface Scenario {
 }
 
 const Scenarios: React.FC = () => {
+  const { currentBranch } = useBranchStore();
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewModalVisible, setViewModalVisible] = useState(false);
@@ -26,7 +28,7 @@ const Scenarios: React.FC = () => {
 
   useEffect(() => {
     loadScenarios();
-  }, []);
+  }, [currentBranch]); // Перезагружаем при смене ветки
 
   const loadScenarios = async () => {
     setLoading(true);
