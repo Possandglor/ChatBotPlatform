@@ -217,52 +217,51 @@ public class ScenarioController {
     public Response getEntryPointScenario(@Context HttpHeaders headers) {
         // Проверяем header для ветки
         String branchName = headers.getHeaderString("X-Branch");
-        
-        if (branchName != null && !branchName.equals("main")) {
-            // Получаем entry-point из глобальной ветки
-            try {
-                WorkspaceBranch branch = workspaceBranchService.getBranch(branchName);
-                if (branch != null) {
-                    // Ищем entry-point сценарий в ветке
-                    for (Map.Entry<String, Map<String, Object>> entry : branch.scenarios.entrySet()) {
-                        Map<String, Object> scenarioData = entry.getValue();
-                        Boolean isEntryPoint = (Boolean) scenarioData.get("is_entry_point");
-                        if (Boolean.TRUE.equals(isEntryPoint)) {
-                            Map<String, Object> scenarioInfo = new HashMap<>();
-                            scenarioInfo.put("id", entry.getKey());
-                            scenarioInfo.put("name", scenarioData.get("name"));
-                            scenarioInfo.put("description", scenarioData.get("description"));
-                            scenarioInfo.put("version", scenarioData.get("version"));
-                            scenarioInfo.put("language", scenarioData.get("language"));
-                            scenarioInfo.put("is_entry_point", scenarioData.get("is_entry_point"));
-                            scenarioInfo.put("scenario_data", scenarioData.get("scenario_data"));
-                            scenarioInfo.put("_branch_info", Map.of(
-                                "branch_name", branchName,
-                                "source", "workspace_branch"
-                            ));
-                            return Response.ok(scenarioInfo).build();
-                        }
+        if (branchName == null) {
+            branchName = "main"; // По умолчанию main
+        }
+
+        // Получаем entry-point из указанной ветки (включая main)
+        try {
+            WorkspaceBranch branch = workspaceBranchService.getBranch(branchName);
+            if (branch != null) {
+                // Ищем entry-point сценарий в ветке
+                for (Map.Entry<String, Map<String, Object>> entry : branch.scenarios.entrySet()) {
+                    Map<String, Object> scenarioData = entry.getValue();
+                    Boolean isEntryPoint = (Boolean) scenarioData.get("is_entry_point");
+                    if (Boolean.TRUE.equals(isEntryPoint)) {
+                        Map<String, Object> scenarioInfo = new HashMap<>();
+                        scenarioInfo.put("id", entry.getKey());
+                        scenarioInfo.put("name", scenarioData.get("name"));
+                        scenarioInfo.put("description", scenarioData.get("description"));
+                        scenarioInfo.put("version", scenarioData.get("version"));
+                        scenarioInfo.put("language", scenarioData.get("language"));
+                        scenarioInfo.put("category", scenarioData.get("category"));
+                        scenarioInfo.put("tags", scenarioData.get("tags"));
+                        scenarioInfo.put("is_active", scenarioData.get("is_active"));
+                        scenarioInfo.put("is_entry_point", scenarioData.get("is_entry_point"));
+                        scenarioInfo.put("created_at", scenarioData.get("created_at"));
+                        scenarioInfo.put("updated_at", scenarioData.get("updated_at"));
+                        scenarioInfo.put("created_by", scenarioData.get("created_by"));
+                        scenarioInfo.put("scenario_data", scenarioData.get("scenario_data"));
+                        return Response.ok(scenarioInfo).build();
                     }
                 }
-            } catch (Exception e) {
-                LOG.errorf(e, "Error getting entry point from branch %s", branchName);
-            }
-        }
-        
-        // Получаем entry-point из main ветки (обычная загрузка)
-        try {
-            ScenarioInfo entryPoint = scenarioService.getEntryPointScenario();
-            if (entryPoint == null) {
+                // Entry point не найден в ветке
                 return Response.status(Response.Status.NOT_FOUND)
-                        .entity(Map.of("error", "No entry point scenario found"))
-                        .build();
-            }
-            return Response.ok(entryPoint).build();
-        } catch (Exception e) {
-            LOG.errorf("Error getting entry point scenario: %s", e.getMessage());
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(Map.of("error", "Failed to get entry point scenario"))
+                    .entity(Map.of("error", "No entry point scenario found in branch: " + branchName))
                     .build();
+            } else {
+                // Ветка не найдена
+                return Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("error", "Branch not found: " + branchName))
+                    .build();
+            }
+        } catch (Exception e) {
+            LOG.errorf(e, "Error getting entry point from branch %s", branchName);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(Map.of("error", "Failed to get entry point scenario"))
+                .build();
         }
     }
     
