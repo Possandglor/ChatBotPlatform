@@ -1991,11 +1991,19 @@ public class AdvancedScenarioEngine {
         try {
             // Загружаем сценарий
             HttpClient client = HttpClient.newHttpClient();
-            HttpRequest request = HttpRequest.newBuilder()
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:8093/api/v1/scenarios/" + scenarioId))
                 .header("Content-Type", "application/json")
-                .GET()
-                .build();
+                .GET();
+            
+            // Добавляем заголовок X-Branch если есть в контексте
+            String branch = (String) context.get("branch");
+            if (branch != null && !branch.trim().isEmpty()) {
+                requestBuilder.header("X-Branch", branch);
+                LOG.infof("Loading scenario %s from branch: %s", scenarioId, branch);
+            }
+            
+            HttpRequest request = requestBuilder.build();
             
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             
@@ -2010,6 +2018,19 @@ public class AdvancedScenarioEngine {
                 if (scenarioData == null) {
                     return "Ошибка: некорректные данные сценария";
                 }
+                
+                // ИСПРАВЛЕНИЕ: Проверяем на вложенную структуру scenario_data (для веток)
+                if (scenarioData.containsKey("scenario_data")) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> nestedScenarioData = (Map<String, Object>) scenarioData.get("scenario_data");
+                    if (nestedScenarioData != null) {
+                        scenarioData = nestedScenarioData;
+                        LOG.infof("Using nested scenario_data structure for branch scenario");
+                    }
+                }
+                
+                // Логируем структуру для отладки
+                LOG.infof("Scenario data keys: %s", scenarioData.keySet());
                 
                 // Конвертируем в Scenario объект
                 Scenario scenario = convertMapToScenario(scenarioData);
@@ -2151,6 +2172,65 @@ public class AdvancedScenarioEngine {
         return null;
     }
     
+    public String getInitialMessageFromEntryPoint(Map<String, Object> context, String branch) {
+        try {
+            // Загружаем entry point сценарий с учетом ветки
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:8093/api/v1/scenarios/entry-point"))
+                .header("Content-Type", "application/json")
+                .GET();
+            
+            // Добавляем заголовок X-Branch если указан
+            if (branch != null && !branch.trim().isEmpty()) {
+                requestBuilder.header("X-Branch", branch);
+                LOG.infof("Using branch: %s for entry point scenario", branch);
+            }
+            
+            HttpRequest request = requestBuilder.build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() == 200) {
+                ObjectMapper mapper = new ObjectMapper();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> scenarioData = mapper.readValue(response.body(), Map.class);
+                
+                String scenarioId = (String) scenarioData.get("id");
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) scenarioData.get("scenario_data");
+                
+                // ИСПРАВЛЕНИЕ: Проверяем на вложенную структуру scenario_data (для веток)
+                if (data != null && data.containsKey("scenario_data")) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> nestedData = (Map<String, Object>) data.get("scenario_data");
+                    if (nestedData != null) {
+                        data = nestedData;
+                        LOG.infof("Using nested scenario_data structure for branch entry point");
+                    }
+                }
+                
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> nodes = (List<Map<String, Object>>) data.get("nodes");
+                
+                // Находим реальный стартовый узел (узел без входящих связей)
+                String realStartNode = findRealStartNode(nodes, scenarioData);
+                
+                // Сохраняем в контекст для будущих вызовов
+                context.put("scenario_id", scenarioId);
+                context.put("current_node", realStartNode);
+                context.put("branch", branch); // Сохраняем ветку в контексте
+                
+                // Выполняем узлы подряд до первого ask
+                return executeNodesSequentially(scenarioData, realStartNode, context);
+            }
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to get initial message from entry point");
+        }
+        
+        return "Привет! Добро пожаловать в банковский чат-бот.";
+    }
+
     public String getInitialMessageFromEntryPoint(Map<String, Object> context) {
         try {
             // Загружаем entry point сценарий

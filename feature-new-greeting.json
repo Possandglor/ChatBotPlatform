@@ -1,0 +1,39 @@
+{
+  "name": "Приветствие пользователя (feature-new)",
+  "description": "Обновленный сценарий приветствия для ветки feature-new",
+  "version": "1.1",
+  "language": "uk",
+  "category": "greeting",
+  "tags": ["приветствие", "feature-new"],
+  "is_active": true,
+  "is_entry_point": true,
+  "scenario_data": {
+    "start_node": "feature_welcome",
+    "nodes": [
+      {
+        "type": "announce",
+        "id": "feature_welcome",
+        "parameters": {
+          "message": "🚀 Привет из ветки feature-new! Это новый функционал в разработке."
+        },
+        "next_nodes": ["feature_ask"]
+      },
+      {
+        "type": "ask",
+        "id": "feature_ask",
+        "parameters": {
+          "question": "Хотите протестировать новые возможности? (да/нет)"
+        },
+        "next_nodes": ["feature_response"]
+      },
+      {
+        "type": "announce",
+        "id": "feature_response",
+        "parameters": {
+          "message": "Отлично! Ваш ответ: {last_answer}. Спасибо за тестирование новой ветки!"
+        },
+        "next_nodes": []
+      }
+    ]
+  }
+}

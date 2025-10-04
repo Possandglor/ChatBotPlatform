@@ -1,0 +1,39 @@
+{
+  "name": "Приветствие пользователя",
+  "description": "Простой сценарий приветствия с запросом имени",
+  "version": "1.0",
+  "language": "uk",
+  "category": "greeting",
+  "tags": ["приветствие"],
+  "is_active": true,
+  "is_entry_point": true,
+  "scenario_data": {
+    "start_node": "welcome",
+    "nodes": [
+      {
+        "type": "announce",
+        "id": "welcome",
+        "parameters": {
+          "message": "Привет! Как дела?"
+        },
+        "next_nodes": ["ask_name"]
+      },
+      {
+        "type": "ask",
+        "id": "ask_name",
+        "parameters": {
+          "question": "Как вас зовут?"
+        },
+        "next_nodes": ["greet_user"]
+      },
+      {
+        "type": "announce",
+        "id": "greet_user",
+        "parameters": {
+          "message": "Приятно познакомиться, {last_answer}! Чем могу помочь?"
+        },
+        "next_nodes": []
+      }
+    ]
+  }
+}

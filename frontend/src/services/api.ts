@@ -13,13 +13,9 @@ api.interceptors.request.use(
   (config) => {
     console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
     
-    // Добавляем X-Branch header для всех запросов кроме /branches
-    if (!config.url?.includes('/branches')) {
-      const currentBranch = useBranchStore.getState().currentBranch;
-      if (currentBranch && currentBranch !== 'main') {
-        config.headers['X-Branch'] = currentBranch;
-      }
-    }
+    // Добавляем X-Branch header для всех запросов
+    const currentBranch = useBranchStore.getState().currentBranch;
+    config.headers['X-Branch'] = currentBranch || 'main';
     
     return config;
   },
@@ -111,11 +107,11 @@ export const apiService = {
     return { data: response }; // Wrap response in data object for compatibility
   },
 
-  continueSession: async (sessionId: string) => {
+  continueSession: async (sessionId: string, headers?: Record<string, string>) => {
     // Call continue endpoint for automatic progression
     const response = await api.post('/chat/continue', {
       session_id: sessionId
-    });
+    }, { headers });
     return { data: response }; // Wrap response in data object for compatibility
   }
 };

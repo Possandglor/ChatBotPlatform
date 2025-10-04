@@ -55,14 +55,25 @@ public class OrchestratorController {
     // === CHAT API (как было в Chat Service) ===
     @POST
     @Path("/chat/sessions")
-    public Response createChatSession() {
+    public Response createChatSession(@HeaderParam("X-Branch") String branch) {
         String sessionId = UUID.randomUUID().toString();
+        
+        // Логируем полученный заголовок
+        LOG.infof("Received X-Branch header: '%s'", branch);
         
         // Создаем контекст для сценария
         Map<String, Object> context = new HashMap<>();
         
+        // Сохраняем ветку в контексте если указана
+        if (branch != null && !branch.trim().isEmpty()) {
+            context.put("branch", branch);
+            LOG.infof("Creating session with branch: %s", branch);
+        } else {
+            LOG.infof("Creating session with default branch (main)");
+        }
+        
         // Получаем начальное сообщение от entry point сценария
-        String initialMessage = getInitialMessage();
+        String initialMessage = getInitialMessage(branch);
         
         // Сохраняем контекст сессии
         sessionContexts.put(sessionId, context);
@@ -154,9 +165,9 @@ public class OrchestratorController {
                 return Response.ok(Map.of(
                     "session_id", sessionId,
                     "message_saved", true,
-                    "bot_response", botResponse,
+                    "bot_response", botResponse != null ? botResponse : "Диалог завершен",
                     "node_type", "end",
-                    "context", currentSessionContext,
+                    "context", currentSessionContext != null ? currentSessionContext : Map.of(),
                     "session_ended", true,
                     "timestamp", System.currentTimeMillis()
                 )).build();
@@ -449,12 +460,12 @@ public class OrchestratorController {
     }
 
     // === ВНУТРЕННИЕ МЕТОДЫ ===
-    private String getInitialMessage() {
+    private String getInitialMessage(String branch) {
         try {
             // Получаем начальное сообщение от entry point сценария
             // Используем временный контекст для получения сообщения
             Map<String, Object> tempContext = new HashMap<>();
-            return scenarioEngine.getInitialMessageFromEntryPoint(tempContext);
+            return scenarioEngine.getInitialMessageFromEntryPoint(tempContext, branch);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to get initial message from entry point scenario");
             return "Привет! Я готов к тестированию. Напишите что-нибудь для начала диалога.";
@@ -538,8 +549,14 @@ public class OrchestratorController {
 
     private void initializeContextFromEntryPoint(Map<String, Object> context) {
         try {
+            // Получаем ветку из контекста (если была сохранена при создании сессии)
+            String branch = (String) context.get("branch");
             // Инициализируем контекст от entry point, но не возвращаем сообщение
-            scenarioEngine.getInitialMessageFromEntryPoint(context);
+            if (branch != null) {
+                scenarioEngine.getInitialMessageFromEntryPoint(context, branch);
+            } else {
+                scenarioEngine.getInitialMessageFromEntryPoint(context);
+            }
         } catch (Exception e) {
             LOG.errorf(e, "Failed to initialize context from entry point");
         }

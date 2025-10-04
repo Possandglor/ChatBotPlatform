@@ -1,0 +1,39 @@
+{
+  "name": "Приветствие пользователя (test ветка)",
+  "description": "Тестовый сценарий для ветки test с символами фыа",
+  "version": "1.1",
+  "language": "uk",
+  "category": "greeting",
+  "tags": ["приветствие", "test"],
+  "is_active": true,
+  "is_entry_point": true,
+  "scenario_data": {
+    "start_node": "test_welcome",
+    "nodes": [
+      {
+        "type": "announce",
+        "id": "test_welcome",
+        "parameters": {
+          "message": "Привет! Как дела? фыа"
+        },
+        "next_nodes": ["test_ask"]
+      },
+      {
+        "type": "ask",
+        "id": "test_ask",
+        "parameters": {
+          "question": "Как вас зовут? фыа"
+        },
+        "next_nodes": ["test_response"]
+      },
+      {
+        "type": "announce",
+        "id": "test_response",
+        "parameters": {
+          "message": "Приятно познакомиться, {last_answer}! Чем могу помочь? фыа"
+        },
+        "next_nodes": []
+      }
+    ]
+  }
+}

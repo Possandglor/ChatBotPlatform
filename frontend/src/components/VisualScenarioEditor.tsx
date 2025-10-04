@@ -707,7 +707,22 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
   };
 
   const saveToBranch = async () => {
-    if (!editingScenarioId || !currentBranch) return;
+    // Открываем модальное окно для ввода данных сценария
+    setSaveModalVisible(true);
+    
+    // Если редактируем существующий сценарий, заполняем поля
+    if (editingScenarioId) {
+      // Данные уже должны быть в состоянии
+    } else {
+      // Для нового сценария очищаем поля
+      setScenarioName('');
+      setScenarioDescription('');
+      setIsEntryPoint(false);
+    }
+  };
+
+  const handleSaveConfirm = async () => {
+    if (!currentBranch) return;
 
     const scenarioData = {
       start_node: nodes.length > 0 ? nodes[0].id : 'start',
@@ -758,17 +773,36 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
     };
 
     try {
-      // Всегда сохраняем через scenarioService - он автоматически учтет X-Branch header
-      await scenarioService.updateScenario(editingScenarioId, {
-        name: scenarioName,
-        description: scenarioDescription,
-        scenario_data: scenarioData
-      });
+      if (editingScenarioId) {
+        // Обновляем существующий сценарий
+        await scenarioService.updateScenario(editingScenarioId, {
+          name: scenarioName,
+          description: scenarioDescription,
+          is_entry_point: isEntryPoint,
+          scenario_data: scenarioData
+        });
+        message.success(`Сценарий обновлен в ветке: ${currentBranch}`);
+      } else {
+        // Создаем новый сценарий
+        const newScenario = await scenarioService.createScenario({
+          name: scenarioName,
+          description: scenarioDescription,
+          is_entry_point: isEntryPoint,
+          scenario_data: scenarioData,
+          trigger_intents: [],
+          nodes: []
+        });
+        
+        // Устанавливаем ID нового сценария для дальнейшего редактирования
+        setEditingScenarioId(newScenario.id || Date.now().toString());
+        message.success(`Сценарий создан в ветке: ${currentBranch}`);
+      }
       
-      message.success(`Сценарий сохранен в ветку: ${currentBranch}`);
+      setSaveModalVisible(false);
+      onScenarioSaved?.();
     } catch (error) {
-      console.error('Error saving to branch:', error);
-      message.error('Ошибка сохранения в ветку');
+      console.error('Error saving scenario:', error);
+      message.error('Ошибка сохранения сценария');
     }
   };
 
@@ -1215,9 +1249,9 @@ intent != "unknown"
       </Drawer>
 
       <Modal
-        title="Сохранить сценарий"
+        title={editingScenarioId ? "Обновить сценарий" : "Создать новый сценарий"}
         open={saveModalVisible}
-        onOk={saveScenarioToList}
+        onOk={handleSaveConfirm}
         onCancel={() => setSaveModalVisible(false)}
       >
         <Form layout="vertical">

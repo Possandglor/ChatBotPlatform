@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Input, Select, Form, Space, Divider, message, Modal } from 'antd';
+import { Card, Button, Input, Select, Form, Space, Divider, message, Modal, Checkbox } from 'antd';
 import { PlusOutlined, DeleteOutlined, SaveOutlined, ImportOutlined } from '@ant-design/icons';
 import { scenarioService } from '../services/scenarioService';
 
@@ -17,6 +17,7 @@ interface ScenarioNode {
   target_scenario?: string;
   options?: Array<{ text: string; value: string; next_node?: string }>;
   next_node?: string;
+  next_nodes?: string[];
   true_node?: string;
   false_node?: string;
 }
@@ -27,6 +28,7 @@ interface Scenario {
   description: string;
   trigger_intents: string[];
   nodes: ScenarioNode[];
+  is_entry_point?: boolean;
 }
 
 interface ScenarioEditorProps {
@@ -36,6 +38,7 @@ interface ScenarioEditorProps {
 
 const ScenarioEditor: React.FC<ScenarioEditorProps> = ({ editingScenario, onScenarioSaved }) => {
   const [currentScenario, setCurrentScenario] = useState<Scenario>({
+    id: undefined,  // Явно устанавливаем undefined для нового сценария
     name: '',
     description: '',
     trigger_intents: [],
@@ -44,6 +47,8 @@ const ScenarioEditor: React.FC<ScenarioEditorProps> = ({ editingScenario, onScen
   const [selectedNodeId, setSelectedNodeId] = useState<string>('');
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [importText, setImportText] = useState('');
+  const [saveModalVisible, setSaveModalVisible] = useState(false);
+  const [saveForm] = Form.useForm();
 
   // Загрузка редактируемого сценария
   useEffect(() => {
@@ -89,7 +94,7 @@ const ScenarioEditor: React.FC<ScenarioEditorProps> = ({ editingScenario, onScen
       if (updates.id && updates.id !== nodeId) {
         updatedNodes = updatedNodes.map(node => ({
           ...node,
-          next_nodes: node.next_nodes?.map(nextId => 
+          next_nodes: node.next_nodes?.map((nextId: string) => 
             nextId === nodeId ? updates.id! : nextId
           ) || []
         }));
@@ -110,15 +115,41 @@ const ScenarioEditor: React.FC<ScenarioEditorProps> = ({ editingScenario, onScen
   };
 
   const saveScenario = async () => {
+    // Открываем модальное окно для ввода данных
+    setSaveModalVisible(true);
+    // Заполняем форму текущими данными
+    saveForm.setFieldsValue({
+      name: currentScenario.name,
+      description: currentScenario.description,
+      is_entry_point: currentScenario.is_entry_point || false
+    });
+  };
+
+  const handleSaveConfirm = async () => {
     try {
+      const values = await saveForm.validateFields();
+      const scenarioToSave = {
+        ...currentScenario,
+        name: values.name,
+        description: values.description,
+        is_entry_point: values.is_entry_point
+      };
+
       if (currentScenario.id) {
-        await scenarioService.updateScenario(currentScenario.id, currentScenario);
+        await scenarioService.updateScenario(currentScenario.id, scenarioToSave);
         message.success('Сценарий обновлен');
       } else {
-        await scenarioService.createScenario(currentScenario);
+        const createdScenario = await scenarioService.createScenario(scenarioToSave);
+        // Обновляем текущий сценарий с полученным ID
+        setCurrentScenario({
+          ...scenarioToSave,
+          id: createdScenario.id || Date.now().toString()
+        });
         message.success('Сценарий создан');
       }
-      onScenarioSaved?.(); // Вызываем callback для обновления списка
+      
+      setSaveModalVisible(false);
+      onScenarioSaved?.();
     } catch (error) {
       message.error('Ошибка сохранения сценария');
     }
@@ -129,7 +160,8 @@ const ScenarioEditor: React.FC<ScenarioEditorProps> = ({ editingScenario, onScen
       name: '',
       description: '',
       trigger_intents: [],
-      nodes: []
+      nodes: [],
+      id: undefined  // Явно устанавливаем undefined для нового сценария
     });
     setSelectedNodeId('');
     message.info('Создание нового сценария');
@@ -410,6 +442,51 @@ const ScenarioEditor: React.FC<ScenarioEditorProps> = ({ editingScenario, onScen
           placeholder="Вставьте JSON сценария здесь..."
           rows={20}
         />
+      </Modal>
+
+      <Modal
+        title={currentScenario.id ? "Обновить сценарий" : "Создать новый сценарий"}
+        open={saveModalVisible}
+        onOk={handleSaveConfirm}
+        onCancel={() => setSaveModalVisible(false)}
+        width={600}
+      >
+        <Form
+          form={saveForm}
+          layout="vertical"
+          initialValues={{
+            name: currentScenario.name,
+            description: currentScenario.description,
+            is_entry_point: currentScenario.is_entry_point || false
+          }}
+        >
+          <Form.Item
+            label="Название сценария"
+            name="name"
+            rules={[{ required: true, message: 'Введите название сценария' }]}
+          >
+            <Input placeholder="Введите название сценария" />
+          </Form.Item>
+          
+          <Form.Item
+            label="Описание"
+            name="description"
+          >
+            <Input.TextArea 
+              placeholder="Введите описание сценария" 
+              rows={3}
+            />
+          </Form.Item>
+          
+          <Form.Item
+            name="is_entry_point"
+            valuePropName="checked"
+          >
+            <Checkbox>
+              Является стартовой точкой (entry point)
+            </Checkbox>
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

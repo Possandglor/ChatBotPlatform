@@ -33,8 +33,8 @@ const Testing: React.FC = () => {
   const createSession = async () => {
     try {
       setLoading(true);
-      // Передаем текущую ветку в заголовке
-      const headers = currentBranch !== 'main' ? { 'X-Branch': currentBranch } : {};
+      // Передаем текущую ветку в заголовке (всегда)
+      const headers = { 'X-Branch': currentBranch };
       const response = await apiService.createChatSession(headers);
       const newSessionId = (response.data as any).session_id;
       const initialMessage = (response.data as any).initial_message || 'Привет! Я готов к тестированию. Напишите что-нибудь для начала диалога.';
@@ -72,7 +72,9 @@ const Testing: React.FC = () => {
 
   const continueSession = async (sessionId: string) => {
     try {
-      const response = await apiService.continueSession(sessionId);
+      // Передаем текущую ветку в заголовке (всегда)
+      const headers = { 'X-Branch': currentBranch };
+      const response = await apiService.continueSession(sessionId, headers);
       const botResponse = (response.data as any).bot_response;
       const nodeType = (response.data as any).node_type;
       
@@ -122,8 +124,8 @@ const Testing: React.FC = () => {
     setLoading(true);
 
     try {
-      // Передаем текущую ветку в заголовке
-      const headers = currentBranch !== 'main' ? { 'X-Branch': currentBranch } : {};
+      // Передаем текущую ветку в заголовке (всегда)
+      const headers = { 'X-Branch': currentBranch };
       const response = await apiService.sendMessage(sessionId, inputValue, headers);
       const botResponse = (response.data as any).bot_response;
       const nodeType = (response.data as any).node_type;

@@ -1,6 +1,7 @@
 package com.pb.chatbot.scenario.service;
 
 import com.pb.chatbot.scenario.model.ScenarioInfo;
+import com.pb.chatbot.scenario.model.WorkspaceBranch;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -17,6 +18,9 @@ public class ScenarioManagementService {
     
     @Inject
     BranchService branchService;
+    
+    @Inject
+    WorkspaceBranchService workspaceBranchService;
     
     public ScenarioManagementService() {
         // Создаем тестовые сценарии
@@ -160,6 +164,56 @@ public class ScenarioManagementService {
         );
         scenarios.put(help.id, help);
         
+        // Создаем тестовые ветки
+        createTestBranches();
+        
         LOG.info("Created test scenarios");
+    }
+    
+    private void createTestBranches() {
+        try {
+            // Создаем ветку test с измененным сообщением
+            WorkspaceBranch testBranch = workspaceBranchService.createBranch("test", "main", "system");
+            if (testBranch != null && testBranch.scenarios.containsKey("greeting-001")) {
+                Map<String, Object> testScenario = new HashMap<>(testBranch.scenarios.get("greeting-001"));
+                Map<String, Object> scenarioData = (Map<String, Object>) testScenario.get("scenario_data");
+                List<Map<String, Object>> nodes = (List<Map<String, Object>>) scenarioData.get("nodes");
+                
+                // Изменяем сообщение в первом узле
+                for (Map<String, Object> node : nodes) {
+                    if ("welcome".equals(node.get("id"))) {
+                        Map<String, Object> parameters = (Map<String, Object>) node.get("parameters");
+                        parameters.put("message", "Привет! Как дела? фыа");
+                        break;
+                    }
+                }
+                
+                testBranch.scenarios.put("greeting-001", testScenario);
+                LOG.info("Updated test branch with custom message");
+            }
+            
+            // Создаем ветку feature-new с эмодзи
+            WorkspaceBranch featureBranch = workspaceBranchService.createBranch("feature-new", "main", "system");
+            if (featureBranch != null && featureBranch.scenarios.containsKey("greeting-001")) {
+                Map<String, Object> featureScenario = new HashMap<>(featureBranch.scenarios.get("greeting-001"));
+                Map<String, Object> scenarioData = (Map<String, Object>) featureScenario.get("scenario_data");
+                List<Map<String, Object>> nodes = (List<Map<String, Object>>) scenarioData.get("nodes");
+                
+                // Изменяем сообщение в первом узле
+                for (Map<String, Object> node : nodes) {
+                    if ("welcome".equals(node.get("id"))) {
+                        Map<String, Object> parameters = (Map<String, Object>) node.get("parameters");
+                        parameters.put("message", "🚀 Привет из ветки feature-new!");
+                        break;
+                    }
+                }
+                
+                featureBranch.scenarios.put("greeting-001", featureScenario);
+                LOG.info("Updated feature-new branch with custom message");
+            }
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to create test branches");
+        }
     }
 }

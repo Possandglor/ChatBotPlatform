@@ -166,6 +166,9 @@ public class ScenarioController {
     @PUT
     @Path("/{id}")
     public Response updateScenario(@PathParam("id") String id, ScenarioInfo scenario, @Context HttpHeaders headers) {
+        // Логируем для отладки
+        LOG.infof("Updating scenario %s, isEntryPoint: %s", id, scenario.isEntryPoint);
+        
         // Проверяем header для ветки
         String branchName = headers.getHeaderString("X-Branch");
         
@@ -285,6 +288,25 @@ public class ScenarioController {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(Map.of("error", "Failed to get entry point scenario"))
                     .build();
+        }
+    }
+    
+    @POST
+    @Path("/fix-test-branch")
+    public Response fixTestBranch() {
+        try {
+            // Исправляем ветку test
+            WorkspaceBranch testBranch = workspaceBranchService.getBranch("test");
+            if (testBranch != null && testBranch.scenarios.containsKey("greeting-001")) {
+                Map<String, Object> scenario = testBranch.scenarios.get("greeting-001");
+                scenario.put("is_entry_point", true);
+                LOG.info("Fixed test branch entry point");
+                return Response.ok(Map.of("success", true, "message", "Test branch fixed")).build();
+            }
+            return Response.status(404).entity(Map.of("error", "Test branch not found")).build();
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to fix test branch");
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
         }
     }
 }
