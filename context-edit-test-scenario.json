@@ -1,0 +1,250 @@
+{
+  "id": "context-edit-test",
+  "name": "Context Edit Test Scenario",
+  "description": "Тестирование узла редактирования контекста",
+  "version": "1.0",
+  "language": "uk",
+  "is_entry_point": false,
+  "start_node": "start",
+  "scenario_data": {
+    "id": "context-edit-test",
+    "name": "Context Edit Test Scenario",
+    "version": "1.0",
+    "language": "uk",
+    "start_node": "start",
+    "nodes": [
+      {
+        "id": "start",
+        "type": "announce",
+        "parameters": {
+          "message": "🧪 Тестируем узел редактирования контекста\n\nИсходный контекст будет показан после операций..."
+        },
+        "next_nodes": ["setup_initial_data"]
+      },
+      {
+        "id": "setup_initial_data",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "set",
+              "path": "user.name",
+              "value": "Олександр Петренко"
+            },
+            {
+              "action": "set",
+              "path": "user.age",
+              "value": 30
+            },
+            {
+              "action": "set",
+              "path": "user.profile.theme",
+              "value": "dark"
+            },
+            {
+              "action": "set",
+              "path": "user.profile.language",
+              "value": "uk"
+            },
+            {
+              "action": "add",
+              "path": "user.permissions[]",
+              "value": "read"
+            },
+            {
+              "action": "add",
+              "path": "user.permissions[]",
+              "value": "write"
+            },
+            {
+              "action": "set",
+              "path": "session.start_time",
+              "value": "2025-01-04T14:37:46Z"
+            },
+            {
+              "action": "set",
+              "path": "session.id",
+              "value": "test-session-001"
+            }
+          ]
+        },
+        "next_nodes": ["show_initial_state"]
+      },
+      {
+        "id": "show_initial_state",
+        "type": "announce",
+        "parameters": {
+          "message": "📋 Начальное состояние контекста:\n\n👤 Пользователь: {context.user.name}\n🎂 Возраст: {context.user.age}\n🎨 Тема: {context.user.profile.theme}\n🌐 Язык: {context.user.profile.language}\n🔑 Права: {context.user.permissions[0]}, {context.user.permissions[1]}\n🕐 Сессия: {context.session.id} ({context.session.start_time})"
+        },
+        "next_nodes": ["modify_data"]
+      },
+      {
+        "id": "modify_data",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "set",
+              "path": "user.age",
+              "value": 31
+            },
+            {
+              "action": "set",
+              "path": "user.profile.theme",
+              "value": "light"
+            },
+            {
+              "action": "add",
+              "path": "user.permissions[]",
+              "value": "admin"
+            },
+            {
+              "action": "set",
+              "path": "user.profile.notifications.email",
+              "value": true
+            },
+            {
+              "action": "set",
+              "path": "user.profile.notifications.sms",
+              "value": false
+            },
+            {
+              "action": "set",
+              "path": "session.last_activity",
+              "value": "2025-01-04T14:40:00Z"
+            }
+          ]
+        },
+        "next_nodes": ["show_modified_state"]
+      },
+      {
+        "id": "show_modified_state",
+        "type": "announce",
+        "parameters": {
+          "message": "✏️ После изменений:\n\n👤 Пользователь: {context.user.name}\n🎂 Возраст: {context.user.age} (изменен!)\n🎨 Тема: {context.user.profile.theme} (изменена!)\n🌐 Язык: {context.user.profile.language}\n🔑 Права: {context.user.permissions[0]}, {context.user.permissions[1]}, {context.user.permissions[2]} (добавлено!)\n📧 Email уведомления: {context.user.profile.notifications.email}\n📱 SMS уведомления: {context.user.profile.notifications.sms}\n🕐 Последняя активность: {context.session.last_activity}"
+        },
+        "next_nodes": ["test_delete_operations"]
+      },
+      {
+        "id": "test_delete_operations",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "delete",
+              "path": "user.age"
+            },
+            {
+              "action": "delete",
+              "path": "user.permissions[1]"
+            },
+            {
+              "action": "set",
+              "path": "user.status",
+              "value": "active"
+            }
+          ]
+        },
+        "next_nodes": ["show_after_delete"]
+      },
+      {
+        "id": "show_after_delete",
+        "type": "announce",
+        "parameters": {
+          "message": "🗑️ После удаления:\n\n👤 Пользователь: {context.user.name}\n🎂 Возраст: {context.user.age} (удален!)\n🎨 Тема: {context.user.profile.theme}\n🔑 Права: {context.user.permissions[0]}, {context.user.permissions[1]} (один удален!)\n📊 Статус: {context.user.status} (добавлен!)\n📧 Email уведомления: {context.user.profile.notifications.email}"
+        },
+        "next_nodes": ["test_merge_operations"]
+      },
+      {
+        "id": "test_merge_operations",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "merge",
+              "path": "user.profile",
+              "value": {
+                "avatar": "avatar.jpg",
+                "bio": "Тестовый пользователь",
+                "settings": {
+                  "auto_save": true
+                }
+              }
+            },
+            {
+              "action": "set",
+              "path": "analytics.page_views",
+              "value": 42
+            },
+            {
+              "action": "set",
+              "path": "analytics.session_duration",
+              "value": "5m 30s"
+            }
+          ]
+        },
+        "next_nodes": ["show_final_state"]
+      },
+      {
+        "id": "show_final_state",
+        "type": "announce",
+        "parameters": {
+          "message": "🎯 Финальное состояние:\n\n👤 Пользователь: {context.user.name}\n🎨 Тема: {context.user.profile.theme}\n🖼️ Аватар: {context.user.profile.avatar} (добавлен через merge!)\n📝 Био: {context.user.profile.bio}\n💾 Автосохранение: {context.user.profile.settings.auto_save}\n📧 Email: {context.user.profile.notifications.email}\n📊 Просмотры: {context.analytics.page_views}\n⏱️ Длительность сессии: {context.analytics.session_duration}"
+        },
+        "next_nodes": ["test_dynamic_values"]
+      },
+      {
+        "id": "test_dynamic_values",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "set",
+              "path": "computed.full_name",
+              "value": "{context.user.name}"
+            },
+            {
+              "action": "set",
+              "path": "computed.theme_status",
+              "value": "Используется {context.user.profile.theme} тема"
+            },
+            {
+              "action": "set",
+              "path": "computed.session_info",
+              "value": "Сессия {context.session.id} активна с {context.session.start_time}"
+            }
+          ]
+        },
+        "next_nodes": ["show_dynamic_results"]
+      },
+      {
+        "id": "show_dynamic_results",
+        "type": "announce",
+        "parameters": {
+          "message": "🔄 Динамические значения:\n\n📛 Полное имя: {context.computed.full_name}\n🎨 Статус темы: {context.computed.theme_status}\n📋 Информация о сессии: {context.computed.session_info}\n\n✅ Все операции с контекстом выполнены успешно!"
+        },
+        "next_nodes": ["end"]
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "parameters": {
+          "message": "🎉 Тестирование узла context-edit завершено!\n\nПоддерживаемые операции:\n• set - установить значение\n• delete/remove - удалить значение\n• add - добавить в массив\n• merge - объединить объекты\n• clear - очистить контейнер"
+        }
+      }
+    ],
+    "edges": [
+      {"source": "start", "target": "setup_initial_data"},
+      {"source": "setup_initial_data", "target": "show_initial_state"},
+      {"source": "show_initial_state", "target": "modify_data"},
+      {"source": "modify_data", "target": "show_modified_state"},
+      {"source": "show_modified_state", "target": "test_delete_operations"},
+      {"source": "test_delete_operations", "target": "show_after_delete"},
+      {"source": "show_after_delete", "target": "test_merge_operations"},
+      {"source": "test_merge_operations", "target": "show_final_state"},
+      {"source": "show_final_state", "target": "test_dynamic_values"},
+      {"source": "test_dynamic_values", "target": "show_dynamic_results"},
+      {"source": "show_dynamic_results", "target": "end"}
+    ]
+  }
+}

@@ -32,7 +32,8 @@ const CustomNode = ({ data, id, selected }: { data: any; id: string; selected: b
       menu: '#13c2c2',
       scenario_jump: '#eb2f96',
       transfer: '#f5222d',
-      end: '#8c8c8c'
+      end: '#8c8c8c',
+      'context-edit': '#fa8c16'
     };
     return colors[type as keyof typeof colors] || '#d9d9d9';
   };
@@ -406,12 +407,13 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       'end': 'Завершение/Возврат',
       'end_dialog': 'Конец диалога',
       'condition': 'Условие выбора',
-      'switch': 'Множественное условие'
+      'switch': 'Множественное условие',
+      'context-edit': 'Редактирование контекста'
     };
 
     const baseData = { 
       type: selectedNodeType,
-      content: `Новый ${nodeTypeLabels[selectedNodeType] || selectedNodeType} узел`
+      content: `Новый ${nodeTypeLabels[selectedNodeType as keyof typeof nodeTypeLabels] || selectedNodeType} узел`
     };
     
     // Add specific data for different node types
@@ -436,6 +438,14 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
       nodeData = { ...baseData, content: 'Сообщение пользователю' };
     } else if (selectedNodeType === 'ask') {
       nodeData = { ...baseData, content: 'Вопрос пользователю' };
+    } else if (selectedNodeType === 'context-edit') {
+      nodeData = { 
+        ...baseData, 
+        content: 'Редактирование контекста',
+        operations: [
+          { action: 'set', path: 'user.name', value: 'Новый пользователь' }
+        ]
+      };
     }
 
     const newNode: Node = {
@@ -498,7 +508,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
               body: node.data.body,
               headers: node.data.headers,
               prompt: node.data.prompt,
-              target_scenario: node.data.target_scenario
+              target_scenario: node.data.target_scenario,
+              operations: node.data.operations
             },
             next_nodes: (() => {
               // ИСПРАВЛЕНО: Сортируем выходы по sourceHandle для гарантированного порядка
@@ -643,7 +654,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
           body: node.parameters?.body || node.body,
           headers: node.parameters?.headers || node.headers,
           prompt: node.parameters?.prompt || node.prompt,
-          target_scenario: node.parameters?.target_scenario || node.target_scenario
+          target_scenario: node.parameters?.target_scenario || node.target_scenario,
+          operations: node.parameters?.operations || node.operations
         }
       })) || [];
 
@@ -722,7 +734,8 @@ const VisualScenarioEditor: React.FC<VisualScenarioEditorProps> = ({ editingScen
             body: node.parameters?.body,
             headers: node.parameters?.headers,
             target_scenario: node.parameters?.target_scenario,
-            prompt: node.parameters?.prompt
+            prompt: node.parameters?.prompt,
+            operations: node.parameters?.operations
           }
         };
       });
@@ -969,6 +982,49 @@ intent != "unknown"
             </Form.Item>
           </>
         )}
+
+        {data.type === 'context-edit' && (
+          <>
+            <Form.Item label="Операции с контекстом">
+              <div style={{ marginBottom: 8, fontSize: '12px', color: '#666' }}>
+                Поддерживаемые операции: set, delete, add, merge, clear
+              </div>
+              <Input.TextArea
+                value={typeof data.operations === 'string' ? data.operations : JSON.stringify(data.operations || [], null, 2)}
+                onChange={(e) => {
+                  try {
+                    const operations = JSON.parse(e.target.value);
+                    updateNodeData(selectedNode.id, { operations });
+                  } catch {
+                    updateNodeData(selectedNode.id, { operations: e.target.value });
+                  }
+                }}
+                placeholder={`[
+  {
+    "action": "set",
+    "path": "user.name",
+    "value": "Олександр Петренко"
+  },
+  {
+    "action": "add", 
+    "path": "user.permissions[]",
+    "value": "admin"
+  },
+  {
+    "action": "delete",
+    "path": "temp_data"
+  }
+]`}
+                rows={8}
+                disabled={false}
+              />
+            </Form.Item>
+            <div style={{ fontSize: '12px', color: '#999', marginTop: -16, marginBottom: 16 }}>
+              💡 Примеры путей: user.name, user.profile.theme, users[0].name, api_response.data[0]<br/>
+              💡 Динамические значения: "Привет, {`{context.user.name}`}!"
+            </div>
+          </>
+        )}
         
         <Form.Item>
           <Button 
@@ -1007,6 +1063,7 @@ intent != "unknown"
             <Option value="end_dialog">Конец диалога</Option>
             <Option value="condition">Условие выбора</Option>
             <Option value="switch">Множественное условие</Option>
+            <Option value="context-edit">Редактирование контекста</Option>
           </Select>
           <Button type="primary" icon={<PlusOutlined />} onClick={addNode}>
             Добавить узел

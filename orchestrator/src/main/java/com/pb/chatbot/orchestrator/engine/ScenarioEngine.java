@@ -6,7 +6,9 @@ import com.pb.chatbot.orchestrator.model.ScenarioBlock;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -51,6 +53,10 @@ public class ScenarioEngine {
                 return executeWait(block, context);
             case "nlu-request":
                 return executeNluRequest(block, userInput, context, scenario);
+            case "context-edit":
+                return executeContextEdit(block, context);
+            case "calculate":
+                return executeCalculate(block, context);
             default:
                 return createErrorResponse("Unknown block type: " + block.type);
         }
@@ -254,14 +260,18 @@ public class ScenarioEngine {
         if (text == null) return null;
         
         String result = text;
-        Pattern pattern = Pattern.compile("\\{context\\.([^}]+)\\}");
+        
+        // Используем регулярное выражение для поиска всех плейсхолдеров
+        Pattern pattern = Pattern.compile("\\{([^}]+)\\}");
         Matcher matcher = pattern.matcher(text);
         
         while (matcher.find()) {
-            String path = matcher.group(1);
+            String fullPlaceholder = matcher.group(0); // {context.api_response.data[0].name}
+            String path = matcher.group(1); // context.api_response.data[0].name
+            
             Object value = getValueByPath(context, path);
             if (value != null) {
-                result = result.replace(matcher.group(0), String.valueOf(value));
+                result = result.replace(fullPlaceholder, String.valueOf(value));
             }
         }
         
@@ -269,28 +279,196 @@ public class ScenarioEngine {
     }
     
     private Object getValueByPath(Map<String, Object> context, String path) {
-        String[] parts = path.split("\\.");
-        Object current = context.get(parts[0]);
+        if (path == null || path.isEmpty()) return null;
         
-        // Если это JSON строка - парсим
-        if (current instanceof String && ((String) current).startsWith("{")) {
-            try {
-                current = objectMapper.readValue((String) current, Map.class);
-            } catch (Exception e) {
-                LOG.warnf("Failed to parse JSON: %s", e.getMessage());
-                return current; // Возвращаем как есть если не JSON
+        try {
+            // Убираем префикс "context." если есть
+            if (path.startsWith("context.")) {
+                path = path.substring(8);
             }
+            
+            // Разбиваем путь на части, учитывая массивы
+            String[] parts = parseJsonPath(path);
+            Object current = context;
+            
+            for (String part : parts) {
+                if (current == null) return null;
+                
+                // Проверяем, является ли часть индексом массива [0]
+                if (part.matches("\\[\\d+\\]")) {
+                    int index = Integer.parseInt(part.substring(1, part.length() - 1));
+                    if (current instanceof java.util.List) {
+                        java.util.List<?> list = (java.util.List<?>) current;
+                        if (index >= 0 && index < list.size()) {
+                            current = list.get(index);
+                        } else {
+                            return null; // Индекс вне границ
+                        }
+                    } else {
+                        return null; // Не массив
+                    }
+                }
+                // Обычное поле объекта
+                else {
+                    if (current instanceof Map) {
+                        Map<?, ?> map = (Map<?, ?>) current;
+                        current = map.get(part);
+                    } else if (current instanceof String && ((String) current).startsWith("{")) {
+                        // Пытаемся распарсить JSON строку
+                        try {
+                            current = objectMapper.readValue((String) current, Map.class);
+                            if (current instanceof Map) {
+                                Map<?, ?> map = (Map<?, ?>) current;
+                                current = map.get(part);
+                            }
+                        } catch (Exception e) {
+                            LOG.warnf("Failed to parse JSON string: %s", e.getMessage());
+                            return null;
+                        }
+                    } else {
+                        return null; // Не объект
+                    }
+                }
+            }
+            
+            return current;
+            
+        } catch (Exception e) {
+            LOG.warnf("Error extracting value by path '%s': %s", path, e.getMessage());
+            return null;
         }
+    }
+    
+    /**
+     * Разбирает JSONPath на части, правильно обрабатывая массивы
+     * Пример: "api_response.users[0].profile.settings[1].value"
+     * Результат: ["api_response", "users", "[0]", "profile", "settings", "[1]", "value"]
+     */
+    private String[] parseJsonPath(String path) {
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inBrackets = false;
         
-        // Проходим по пути
-        for (int i = 1; i < parts.length && current != null; i++) {
-            if (current instanceof Map) {
-                current = ((Map<?, ?>) current).get(parts[i]);
+        for (char c : path.toCharArray()) {
+            if (c == '[') {
+                if (current.length() > 0) {
+                    parts.add(current.toString());
+                    current = new StringBuilder();
+                }
+                current.append(c);
+                inBrackets = true;
+            } else if (c == ']') {
+                current.append(c);
+                parts.add(current.toString());
+                current = new StringBuilder();
+                inBrackets = false;
+            } else if (c == '.' && !inBrackets) {
+                if (current.length() > 0) {
+                    parts.add(current.toString());
+                    current = new StringBuilder();
+                }
             } else {
-                return null;
+                current.append(c);
             }
         }
         
-        return current;
+        if (current.length() > 0) {
+            parts.add(current.toString());
+        }
+        
+        return parts.toArray(new String[0]);
+    }
+    
+    private Map<String, Object> executeContextEdit(ScenarioBlock block, Map<String, Object> context) {
+        LOG.infof("Executing context edit for block: %s", block.id);
+        
+        if (block.parameters == null) {
+            return createResponse("context-edit", "No parameters", getNextNode(block), context);
+        }
+        
+        Object operationsObj = block.parameters.get("operations");
+        if (operationsObj instanceof List) {
+            List<Map<String, Object>> operations = (List<Map<String, Object>>) operationsObj;
+            
+            for (Map<String, Object> op : operations) {
+                String action = (String) op.get("action");
+                String path = (String) op.get("path");
+                Object value = op.get("value");
+                
+                if ("set".equals(action) && path != null) {
+                    setSimpleContextValue(context, path, value);
+                } else if ("delete".equals(action) && path != null) {
+                    deleteSimpleContextValue(context, path);
+                }
+            }
+        }
+        
+        return createResponse("context-edit", "Context updated", getNextNode(block), context);
+    }
+    
+    private void setSimpleContextValue(Map<String, Object> context, String path, Object value) {
+        if (value instanceof String) {
+            value = replaceVariables((String) value, context);
+        }
+        context.put(path, value);
+    }
+    
+    private void deleteSimpleContextValue(Map<String, Object> context, String path) {
+        context.remove(path);
+    }
+    
+    private Map<String, Object> executeCalculate(ScenarioBlock block, Map<String, Object> context) {
+        LOG.infof("Executing calculate for block: %s", block.id);
+        
+        if (block.parameters == null) {
+            return createResponse("calculate", "No parameters", getNextNode(block), context);
+        }
+        
+        Object operationsObj = block.parameters.get("operations");
+        if (operationsObj instanceof List) {
+            List<Map<String, Object>> operations = (List<Map<String, Object>>) operationsObj;
+            
+            for (Map<String, Object> op : operations) {
+                String target = (String) op.get("target");
+                String operation = (String) op.get("operation");
+                Object value = op.get("value");
+                
+                if (target != null && operation != null) {
+                    executeSimpleCalculateOperation(context, target, operation, value);
+                }
+            }
+        }
+        
+        return createResponse("calculate", "Calculations completed", getNextNode(block), context);
+    }
+    
+    private void executeSimpleCalculateOperation(Map<String, Object> context, String target, String operation, Object value) {
+        Object current = context.get(target);
+        double currentNum = parseSimpleNumber(current);
+        double valueNum = parseSimpleNumber(value);
+        
+        double result = switch (operation.toLowerCase()) {
+            case "add", "increment", "+" -> currentNum + valueNum;
+            case "subtract", "decrement", "-" -> currentNum - valueNum;
+            case "multiply", "*" -> currentNum * valueNum;
+            case "divide", "/" -> valueNum != 0 ? currentNum / valueNum : currentNum;
+            case "set", "=" -> valueNum;
+            default -> currentNum;
+        };
+        
+        context.put(target, (result == Math.floor(result)) ? (int) result : result);
+    }
+    
+    private double parseSimpleNumber(Object value) {
+        if (value == null) return 0.0;
+        if (value instanceof Number) return ((Number) value).doubleValue();
+        if (value instanceof String) {
+            try {
+                return Double.parseDouble((String) value);
+            } catch (NumberFormatException e) {
+                return 0.0;
+            }
+        }
+        return 0.0;
     }
 }

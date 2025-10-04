@@ -1,0 +1,135 @@
+{
+  "id": "delete-test",
+  "name": "Delete Test Scenario",
+  "description": "Тест удаления сущностей",
+  "version": "1.0",
+  "language": "uk",
+  "is_entry_point": false,
+  "start_node": "setup",
+  "scenario_data": {
+    "id": "delete-test",
+    "name": "Delete Test Scenario",
+    "version": "1.0",
+    "language": "uk",
+    "start_node": "setup",
+    "nodes": [
+      {
+        "id": "setup",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "set",
+              "path": "user.name",
+              "value": "Тестовый пользователь"
+            },
+            {
+              "action": "set",
+              "path": "user.age",
+              "value": 25
+            },
+            {
+              "action": "set",
+              "path": "user.password",
+              "value": "secret123"
+            },
+            {
+              "action": "add",
+              "path": "user.permissions[]",
+              "value": "read"
+            },
+            {
+              "action": "add",
+              "path": "user.permissions[]",
+              "value": "write"
+            },
+            {
+              "action": "add",
+              "path": "user.permissions[]",
+              "value": "admin"
+            },
+            {
+              "action": "set",
+              "path": "temp_data.cache",
+              "value": "временные данные"
+            }
+          ]
+        },
+        "next_nodes": ["show_before"]
+      },
+      {
+        "id": "show_before",
+        "type": "announce",
+        "parameters": {
+          "message": "📋 ДО удаления:\n👤 Имя: {context.user.name}\n🎂 Возраст: {context.user.age}\n🔒 Пароль: {context.user.password}\n🔑 Права: {context.user.permissions[0]}, {context.user.permissions[1]}, {context.user.permissions[2]}\n💾 Кеш: {context.temp_data.cache}"
+        },
+        "next_nodes": ["delete_data"]
+      },
+      {
+        "id": "delete_data",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "delete",
+              "path": "user.password"
+            },
+            {
+              "action": "delete",
+              "path": "user.permissions[1]"
+            },
+            {
+              "action": "delete",
+              "path": "temp_data"
+            }
+          ]
+        },
+        "next_nodes": ["show_after"]
+      },
+      {
+        "id": "show_after",
+        "type": "announce",
+        "parameters": {
+          "message": "🗑️ ПОСЛЕ удаления:\n👤 Имя: {context.user.name}\n🎂 Возраст: {context.user.age}\n🔒 Пароль: {context.user.password} (удален!)\n🔑 Права: {context.user.permissions[0]}, {context.user.permissions[1]} (один удален!)\n💾 Кеш: {context.temp_data.cache} (весь объект удален!)"
+        },
+        "next_nodes": ["clear_test"]
+      },
+      {
+        "id": "clear_test",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "clear",
+              "path": "user.permissions"
+            }
+          ]
+        },
+        "next_nodes": ["show_cleared"]
+      },
+      {
+        "id": "show_cleared",
+        "type": "announce",
+        "parameters": {
+          "message": "🧹 ПОСЛЕ очистки массива:\n🔑 Права: {context.user.permissions} (массив очищен, но существует)\n\n✅ Тест удаления завершен!"
+        },
+        "next_nodes": ["end"]
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "parameters": {
+          "message": "Операции удаления:\n• delete - полное удаление\n• clear - очистка содержимого"
+        }
+      }
+    ],
+    "edges": [
+      {"source": "setup", "target": "show_before"},
+      {"source": "show_before", "target": "delete_data"},
+      {"source": "delete_data", "target": "show_after"},
+      {"source": "show_after", "target": "clear_test"},
+      {"source": "clear_test", "target": "show_cleared"},
+      {"source": "show_cleared", "target": "end"}
+    ]
+  }
+}

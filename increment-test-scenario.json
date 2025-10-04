@@ -1,0 +1,187 @@
+{
+  "id": "increment-test",
+  "name": "Increment Test Scenario", 
+  "description": "Тест инкремента/декремента значений",
+  "version": "1.0",
+  "language": "uk",
+  "is_entry_point": false,
+  "start_node": "init",
+  "scenario_data": {
+    "id": "increment-test",
+    "name": "Increment Test Scenario",
+    "version": "1.0", 
+    "language": "uk",
+    "start_node": "init",
+    "nodes": [
+      {
+        "id": "init",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "set",
+              "path": "counter",
+              "value": 5
+            },
+            {
+              "action": "set",
+              "path": "score",
+              "value": 100
+            }
+          ]
+        },
+        "next_nodes": ["show_initial"]
+      },
+      {
+        "id": "show_initial",
+        "type": "announce",
+        "parameters": {
+          "message": "🔢 Начальные значения:\n📊 Счетчик: {context.counter}\n🎯 Очки: {context.score}"
+        },
+        "next_nodes": ["test_string_increment"]
+      },
+      {
+        "id": "test_string_increment",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "set",
+              "path": "counter_plus_one",
+              "value": "{context.counter + 1}"
+            },
+            {
+              "action": "set",
+              "path": "score_doubled",
+              "value": "{context.score * 2}"
+            },
+            {
+              "action": "set",
+              "path": "calculation_result",
+              "value": "Счетчик + 1 = {context.counter} + 1"
+            }
+          ]
+        },
+        "next_nodes": ["show_string_result"]
+      },
+      {
+        "id": "show_string_result",
+        "type": "announce",
+        "parameters": {
+          "message": "📝 Результат строковых операций:\n➕ counter + 1: '{context.counter_plus_one}'\n✖️ score * 2: '{context.score_doubled}'\n💬 Сообщение: {context.calculation_result}"
+        },
+        "next_nodes": ["manual_increment"]
+      },
+      {
+        "id": "manual_increment",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "set",
+              "path": "counter",
+              "value": 6
+            },
+            {
+              "action": "set",
+              "path": "score",
+              "value": 200
+            },
+            {
+              "action": "set",
+              "path": "lives",
+              "value": 3
+            }
+          ]
+        },
+        "next_nodes": ["show_manual"]
+      },
+      {
+        "id": "show_manual",
+        "type": "announce",
+        "parameters": {
+          "message": "🔧 Ручной инкремент:\n📊 Счетчик: {context.counter} (было 5, стало 6)\n🎯 Очки: {context.score} (было 100, стало 200)\n❤️ Жизни: {context.lives} (новое значение)"
+        },
+        "next_nodes": ["decrement_test"]
+      },
+      {
+        "id": "decrement_test",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "set",
+              "path": "lives",
+              "value": 2
+            },
+            {
+              "action": "set",
+              "path": "counter",
+              "value": 5
+            }
+          ]
+        },
+        "next_nodes": ["show_decrement"]
+      },
+      {
+        "id": "show_decrement",
+        "type": "announce",
+        "parameters": {
+          "message": "⬇️ Декремент:\n❤️ Жизни: {context.lives} (было 3, стало 2)\n📊 Счетчик: {context.counter} (было 6, стало 5)"
+        },
+        "next_nodes": ["array_increment"]
+      },
+      {
+        "id": "array_increment",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "add",
+              "path": "items[]",
+              "value": "item1"
+            },
+            {
+              "action": "add",
+              "path": "items[]", 
+              "value": "item2"
+            },
+            {
+              "action": "add",
+              "path": "items[]",
+              "value": "item3"
+            }
+          ]
+        },
+        "next_nodes": ["show_array"]
+      },
+      {
+        "id": "show_array",
+        "type": "announce",
+        "parameters": {
+          "message": "📦 Массив (инкремент элементов):\n🔢 Элементы: {context.items[0]}, {context.items[1]}, {context.items[2]}\n📊 Количество: можно посчитать программно"
+        },
+        "next_nodes": ["end"]
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "parameters": {
+          "message": "🎯 Выводы:\n✅ Ручной инкремент/декремент работает\n❌ Автоматические вычисления сохраняются как строки\n💡 Для счетчиков используйте явные значения"
+        }
+      }
+    ],
+    "edges": [
+      {"source": "init", "target": "show_initial"},
+      {"source": "show_initial", "target": "test_string_increment"},
+      {"source": "test_string_increment", "target": "show_string_result"},
+      {"source": "show_string_result", "target": "manual_increment"},
+      {"source": "manual_increment", "target": "show_manual"},
+      {"source": "show_manual", "target": "decrement_test"},
+      {"source": "decrement_test", "target": "show_decrement"},
+      {"source": "show_decrement", "target": "array_increment"},
+      {"source": "array_increment", "target": "show_array"},
+      {"source": "show_array", "target": "end"}
+    ]
+  }
+}

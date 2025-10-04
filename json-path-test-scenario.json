@@ -1,0 +1,78 @@
+{
+  "id": "json-path-test",
+  "name": "JSON Path Test Scenario",
+  "description": "Тестирование глубокого извлечения параметров из JSON",
+  "version": "1.0",
+  "language": "uk",
+  "is_entry_point": false,
+  "start_node": "start",
+  "scenario_data": {
+    "id": "json-path-test",
+    "name": "JSON Path Test Scenario",
+    "version": "1.0",
+    "language": "uk",
+    "start_node": "start",
+    "nodes": [
+      {
+        "id": "start",
+        "type": "announce",
+        "parameters": {
+          "message": "Тестируем извлечение параметров из JSON. Сейчас сделаем API запрос..."
+        },
+        "next_nodes": ["api_call"]
+      },
+      {
+        "id": "api_call",
+        "type": "api-request",
+        "parameters": {
+          "url": "http://localhost:8181/api/complex-data",
+          "method": "GET",
+          "timeout": 5000
+        },
+        "conditions": {
+          "success": "show_results",
+          "error": "error_node"
+        }
+      },
+      {
+        "id": "show_results",
+        "type": "announce",
+        "parameters": {
+          "message": "Результаты извлечения:\n\n🔹 Простое поле: {context.api_response.service}\n🔹 Вложенный объект: {context.api_response.server.name}\n🔹 Глубокая вложенность: {context.api_response.server.stats.memory_usage}\n🔹 Первый элемент массива: {context.api_response.endpoints[0]}\n🔹 Второй элемент массива: {context.api_response.endpoints[1]}\n🔹 Объект в массиве: {context.api_response.users[0].name}\n🔹 Глубокий путь в массиве: {context.api_response.users[0].profile.settings.theme}\n🔹 Массив в объекте в массиве: {context.api_response.users[1].permissions[0]}\n🔹 Очень глубокий путь: {context.api_response.data.analytics.reports[0].metrics.conversion_rate}"
+        },
+        "next_nodes": ["test_context_prefix"]
+      },
+      {
+        "id": "test_context_prefix",
+        "type": "announce",
+        "parameters": {
+          "message": "Тестируем без префикса context:\n\n🔸 Без префикса: {api_response.service}\n🔸 Массив без префикса: {api_response.endpoints[0]}\n🔸 Глубокий путь без префикса: {api_response.users[0].profile.settings.theme}"
+        },
+        "next_nodes": ["end"]
+      },
+      {
+        "id": "error_node",
+        "type": "announce",
+        "parameters": {
+          "message": "Ошибка при выполнении API запроса. Проверьте что mock сервер запущен на порту 8181."
+        },
+        "next_nodes": ["end"]
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "parameters": {
+          "message": "Тестирование JSON Path завершено!"
+        }
+      }
+    ],
+    "edges": [
+      {"source": "start", "target": "api_call"},
+      {"source": "api_call", "target": "show_results", "sourceHandle": "success"},
+      {"source": "api_call", "target": "error_node", "sourceHandle": "error"},
+      {"source": "show_results", "target": "test_context_prefix"},
+      {"source": "test_context_prefix", "target": "end"},
+      {"source": "error_node", "target": "end"}
+    ]
+  }
+}

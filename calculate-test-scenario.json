@@ -1,0 +1,216 @@
+{
+  "id": "calculate-test",
+  "name": "Calculate Node Test",
+  "description": "Тестирование узла математических вычислений",
+  "version": "1.0",
+  "language": "uk",
+  "is_entry_point": false,
+  "start_node": "init",
+  "scenario_data": {
+    "id": "calculate-test",
+    "name": "Calculate Node Test",
+    "version": "1.0",
+    "language": "uk",
+    "start_node": "init",
+    "nodes": [
+      {
+        "id": "init",
+        "type": "calculate",
+        "parameters": {
+          "operations": [
+            {
+              "target": "score",
+              "operation": "set",
+              "value": 100
+            },
+            {
+              "target": "lives",
+              "operation": "set",
+              "value": 3
+            },
+            {
+              "target": "level",
+              "operation": "set",
+              "value": 1
+            }
+          ]
+        },
+        "next_nodes": ["show_initial"]
+      },
+      {
+        "id": "show_initial",
+        "type": "announce",
+        "parameters": {
+          "message": "🧮 Начальные значения:\n🎯 Очки: {context.score}\n❤️ Жизни: {context.lives}\n📊 Уровень: {context.level}"
+        },
+        "next_nodes": ["basic_operations"]
+      },
+      {
+        "id": "basic_operations",
+        "type": "calculate",
+        "parameters": {
+          "operations": [
+            {
+              "target": "score",
+              "operation": "add",
+              "value": 50
+            },
+            {
+              "target": "lives",
+              "operation": "decrement",
+              "value": 1
+            },
+            {
+              "target": "level",
+              "operation": "increment",
+              "value": 1
+            }
+          ]
+        },
+        "next_nodes": ["show_basic"]
+      },
+      {
+        "id": "show_basic",
+        "type": "announce",
+        "parameters": {
+          "message": "➕ После базовых операций:\n🎯 Очки: {context.score} (+50)\n❤️ Жизни: {context.lives} (-1)\n📊 Уровень: {context.level} (+1)"
+        },
+        "next_nodes": ["advanced_operations"]
+      },
+      {
+        "id": "advanced_operations",
+        "type": "calculate",
+        "parameters": {
+          "operations": [
+            {
+              "target": "score",
+              "operation": "multiply",
+              "value": 2
+            },
+            {
+              "target": "bonus",
+              "operation": "random",
+              "value": 100
+            },
+            {
+              "target": "max_score",
+              "operation": "max",
+              "value": 500
+            }
+          ]
+        },
+        "next_nodes": ["show_advanced"]
+      },
+      {
+        "id": "show_advanced",
+        "type": "announce",
+        "parameters": {
+          "message": "🔥 После продвинутых операций:\n🎯 Очки: {context.score} (×2)\n🎁 Бонус: {context.bonus} (случайный)\n🏆 Макс очки: {context.max_score}"
+        },
+        "next_nodes": ["math_operations"]
+      },
+      {
+        "id": "math_operations",
+        "type": "calculate",
+        "parameters": {
+          "operations": [
+            {
+              "target": "power_result",
+              "operation": "set",
+              "value": 2
+            },
+            {
+              "target": "power_result",
+              "operation": "power",
+              "value": 3
+            },
+            {
+              "target": "division_result",
+              "operation": "set",
+              "value": 100
+            },
+            {
+              "target": "division_result",
+              "operation": "divide",
+              "value": 3
+            },
+            {
+              "target": "modulo_result",
+              "operation": "set",
+              "value": 17
+            },
+            {
+              "target": "modulo_result",
+              "operation": "modulo",
+              "value": 5
+            }
+          ]
+        },
+        "next_nodes": ["show_math"]
+      },
+      {
+        "id": "show_math",
+        "type": "announce",
+        "parameters": {
+          "message": "🔢 Математические операции:\n⚡ 2³ = {context.power_result}\n➗ 100÷3 = {context.division_result}\n📐 17%5 = {context.modulo_result}"
+        },
+        "next_nodes": ["game_logic"]
+      },
+      {
+        "id": "game_logic",
+        "type": "calculate",
+        "parameters": {
+          "operations": [
+            {
+              "target": "score",
+              "operation": "add",
+              "value": 25
+            },
+            {
+              "target": "score",
+              "operation": "min",
+              "value": 400
+            },
+            {
+              "target": "health",
+              "operation": "set",
+              "value": -10
+            },
+            {
+              "target": "health",
+              "operation": "abs"
+            }
+          ]
+        },
+        "next_nodes": ["show_final"]
+      },
+      {
+        "id": "show_final",
+        "type": "announce",
+        "parameters": {
+          "message": "🎮 Финальные результаты:\n🎯 Очки: {context.score} (ограничено до 400)\n❤️ Жизни: {context.lives}\n📊 Уровень: {context.level}\n💚 Здоровье: {context.health} (абсолютное значение)\n🎁 Бонус: {context.bonus}"
+        },
+        "next_nodes": ["end"]
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "parameters": {
+          "message": "✅ Узел Calculate поддерживает:\n• Базовые: +, -, *, /, %\n• Функции: min, max, abs, random, power\n• Операции: set, increment, decrement"
+        }
+      }
+    ],
+    "edges": [
+      {"source": "init", "target": "show_initial"},
+      {"source": "show_initial", "target": "basic_operations"},
+      {"source": "basic_operations", "target": "show_basic"},
+      {"source": "show_basic", "target": "advanced_operations"},
+      {"source": "advanced_operations", "target": "show_advanced"},
+      {"source": "show_advanced", "target": "math_operations"},
+      {"source": "math_operations", "target": "show_math"},
+      {"source": "show_math", "target": "game_logic"},
+      {"source": "game_logic", "target": "show_final"},
+      {"source": "show_final", "target": "end"}
+    ]
+  }
+}

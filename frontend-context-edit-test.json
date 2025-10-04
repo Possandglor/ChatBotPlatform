@@ -1,0 +1,65 @@
+{
+  "id": "frontend-context-test",
+  "name": "Frontend Context Edit Test",
+  "description": "Тест узла context-edit через фронтенд",
+  "version": "1.0",
+  "language": "uk",
+  "is_entry_point": false,
+  "start_node": "start",
+  "scenario_data": {
+    "id": "frontend-context-test",
+    "name": "Frontend Context Edit Test",
+    "version": "1.0",
+    "language": "uk",
+    "start_node": "start",
+    "nodes": [
+      {
+        "id": "start",
+        "type": "announce",
+        "parameters": {
+          "message": "🎨 Тестируем узел context-edit из фронтенда!"
+        },
+        "next_nodes": ["edit_context"]
+      },
+      {
+        "id": "edit_context",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "set",
+              "path": "frontend.test",
+              "value": "success"
+            },
+            {
+              "action": "set",
+              "path": "user.name",
+              "value": "Frontend User"
+            }
+          ]
+        },
+        "next_nodes": ["show_result"]
+      },
+      {
+        "id": "show_result",
+        "type": "announce",
+        "parameters": {
+          "message": "✅ Результат: {context.frontend.test}\n👤 Пользователь: {context.user.name}"
+        },
+        "next_nodes": ["end"]
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "parameters": {
+          "message": "Тест завершен!"
+        }
+      }
+    ],
+    "edges": [
+      {"source": "start", "target": "edit_context"},
+      {"source": "edit_context", "target": "show_result"},
+      {"source": "show_result", "target": "end"}
+    ]
+  }
+}

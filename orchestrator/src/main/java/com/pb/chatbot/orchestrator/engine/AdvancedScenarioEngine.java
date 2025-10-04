@@ -111,6 +111,12 @@ public class AdvancedScenarioEngine {
             case "wait":
                 return executeWait(node, context, scenario);
                 
+            case "context-edit":
+                return executeContextEdit(node, context, scenario);
+                
+            case "calculate":
+                return executeCalculate(node, context, scenario);
+                
             default:
                 LOG.errorf("Unknown node type: %s", node.type);
                 return createErrorResponse("Unknown node type: " + node.type);
@@ -965,6 +971,483 @@ public class AdvancedScenarioEngine {
         return createResponse("wait", "Wait completed", nextNode, context);
     }
     
+    // ✏️ CONTEXT-EDIT - Редактирование параметров контекста
+    private Map<String, Object> executeContextEdit(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
+        LOG.infof("Executing context edit for node: %s", node.id);
+        
+        if (node.parameters == null) {
+            LOG.errorf("Context edit node %s has no parameters", node.id);
+            return createResponse("context-edit", "Ошибка: нет параметров для редактирования", null, context);
+        }
+        
+        // Операции редактирования контекста
+        Object operationsObj = node.parameters.get("operations");
+        if (operationsObj == null) {
+            LOG.errorf("Context edit node %s has no operations", node.id);
+            return createResponse("context-edit", "Ошибка: нет операций для выполнения", null, context);
+        }
+        
+        List<Map<String, Object>> operations = null;
+        if (operationsObj instanceof List) {
+            operations = (List<Map<String, Object>>) operationsObj;
+        } else if (operationsObj instanceof String) {
+            // Парсим JSON строку с операциями
+            try {
+                operations = objectMapper.readValue((String) operationsObj, List.class);
+            } catch (Exception e) {
+                LOG.errorf("Failed to parse operations JSON: %s", e.getMessage());
+                return createResponse("context-edit", "Ошибка парсинга операций", null, context);
+            }
+        }
+        
+        if (operations == null || operations.isEmpty()) {
+            LOG.warnf("Context edit node %s has empty operations", node.id);
+            return createResponse("context-edit", "Нет операций для выполнения", getNextNode(node, context), context);
+        }
+        
+        int successCount = 0;
+        int errorCount = 0;
+        StringBuilder resultMessage = new StringBuilder();
+        
+        // Выполняем операции по порядку
+        for (Map<String, Object> operation : operations) {
+            try {
+                String action = (String) operation.get("action");
+                String path = (String) operation.get("path");
+                Object value = operation.get("value");
+                
+                if (action == null || path == null) {
+                    LOG.warnf("Invalid operation: action=%s, path=%s", action, path);
+                    errorCount++;
+                    continue;
+                }
+                
+                // Подстановка переменных в значение
+                if (value instanceof String) {
+                    value = substituteVariables((String) value, context);
+                }
+                
+                boolean success = executeContextOperation(context, action, path, value);
+                if (success) {
+                    successCount++;
+                    LOG.debugf("Context operation successful: %s %s", action, path);
+                } else {
+                    errorCount++;
+                    LOG.warnf("Context operation failed: %s %s", action, path);
+                }
+                
+            } catch (Exception e) {
+                LOG.errorf(e, "Error executing context operation: %s", e.getMessage());
+                errorCount++;
+            }
+        }
+        
+        // Формируем сообщение о результате
+        if (successCount > 0 || errorCount > 0) {
+            resultMessage.append(String.format("Контекст обновлен: %d успешно, %d ошибок", successCount, errorCount));
+        } else {
+            resultMessage.append("Операции с контекстом выполнены");
+        }
+        
+        String nextNode = getNextNode(node, context);
+        updateContext(context, nextNode);
+        
+        // Системный узел - сразу выполняем следующий
+        if (nextNode != null) {
+            ScenarioBlock nextNodeBlock = findNodeById(scenario, nextNode);
+            if (nextNodeBlock != null) {
+                return executeNodeByType(nextNodeBlock, "", context, scenario);
+            }
+        }
+        
+        return createResponse("context-edit", resultMessage.toString(), nextNode, context);
+    }
+    
+    /**
+     * Выполняет операцию редактирования контекста
+     * @param context контекст для редактирования
+     * @param action тип операции: set, delete, add, merge
+     * @param path путь к параметру (JSONPath)
+     * @param value значение (для set, add, merge)
+     * @return true если операция успешна
+     */
+    private boolean executeContextOperation(Map<String, Object> context, String action, String path, Object value) {
+        try {
+            switch (action.toLowerCase()) {
+                case "set":
+                    return setContextValue(context, path, value);
+                    
+                case "delete":
+                case "remove":
+                    return deleteContextValue(context, path);
+                    
+                case "add":
+                    return addContextValue(context, path, value);
+                    
+                case "merge":
+                    return mergeContextValue(context, path, value);
+                    
+                case "clear":
+                    return clearContextPath(context, path);
+                    
+                default:
+                    LOG.warnf("Unknown context operation: %s", action);
+                    return false;
+            }
+        } catch (Exception e) {
+            LOG.errorf(e, "Error in context operation %s for path %s", action, path);
+            return false;
+        }
+    }
+    
+    /**
+     * Устанавливает значение по пути (создает путь если не существует)
+     */
+    private boolean setContextValue(Map<String, Object> context, String path, Object value) {
+        String[] parts = parseJsonPath(path);
+        if (parts.length == 0) return false;
+        
+        Map<String, Object> current = context;
+        
+        // Проходим до предпоследнего элемента, создавая путь
+        for (int i = 0; i < parts.length - 1; i++) {
+            String part = parts[i];
+            
+            if (part.matches("\\[\\d+\\]")) {
+                // Массив - пока не поддерживаем создание
+                LOG.warnf("Array creation not supported in path: %s", path);
+                return false;
+            } else {
+                // Объект
+                if (!current.containsKey(part)) {
+                    current.put(part, new HashMap<String, Object>());
+                }
+                Object next = current.get(part);
+                if (!(next instanceof Map)) {
+                    // Перезаписываем если не объект
+                    next = new HashMap<String, Object>();
+                    current.put(part, next);
+                }
+                current = (Map<String, Object>) next;
+            }
+        }
+        
+        // Устанавливаем финальное значение
+        String finalKey = parts[parts.length - 1];
+        if (finalKey.matches("\\[\\d+\\]")) {
+            LOG.warnf("Cannot set array index directly: %s", path);
+            return false;
+        } else {
+            current.put(finalKey, value);
+            return true;
+        }
+    }
+    
+    /**
+     * Удаляет значение по пути
+     */
+    private boolean deleteContextValue(Map<String, Object> context, String path) {
+        String[] parts = parseJsonPath(path);
+        if (parts.length == 0) return false;
+        
+        Object current = context;
+        
+        // Проходим до предпоследнего элемента
+        for (int i = 0; i < parts.length - 1; i++) {
+            String part = parts[i];
+            
+            if (part.matches("\\[\\d+\\]")) {
+                int index = Integer.parseInt(part.substring(1, part.length() - 1));
+                if (current instanceof List) {
+                    List<?> list = (List<?>) current;
+                    if (index >= 0 && index < list.size()) {
+                        current = list.get(index);
+                    } else {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                if (current instanceof Map) {
+                    Map<?, ?> map = (Map<?, ?>) current;
+                    current = map.get(part);
+                    if (current == null) return false;
+                } else {
+                    return false;
+                }
+            }
+        }
+        
+        // Удаляем финальный элемент
+        String finalKey = parts[parts.length - 1];
+        if (finalKey.matches("\\[\\d+\\]")) {
+            int index = Integer.parseInt(finalKey.substring(1, finalKey.length() - 1));
+            if (current instanceof List) {
+                List<Object> list = (List<Object>) current;
+                if (index >= 0 && index < list.size()) {
+                    list.remove(index);
+                    return true;
+                }
+            }
+            return false;
+        } else {
+            if (current instanceof Map) {
+                Map<String, Object> map = (Map<String, Object>) current;
+                return map.remove(finalKey) != null;
+            }
+            return false;
+        }
+    }
+    
+    /**
+     * Добавляет значение (для массивов или создания нового ключа)
+     */
+    private boolean addContextValue(Map<String, Object> context, String path, Object value) {
+        if (path.endsWith("[]")) {
+            // Добавление в массив: "users[]"
+            String arrayPath = path.substring(0, path.length() - 2);
+            Object arrayObj = getValueByJsonPath(context, arrayPath);
+            
+            if (arrayObj instanceof List) {
+                ((List<Object>) arrayObj).add(value);
+                return true;
+            } else {
+                // Создаем новый массив
+                List<Object> newArray = new ArrayList<>();
+                newArray.add(value);
+                return setContextValue(context, arrayPath, newArray);
+            }
+        } else {
+            // Обычное добавление как set
+            return setContextValue(context, path, value);
+        }
+    }
+    
+    /**
+     * Объединяет значение с существующим (для объектов)
+     */
+    private boolean mergeContextValue(Map<String, Object> context, String path, Object value) {
+        Object existing = getValueByJsonPath(context, path);
+        
+        if (existing instanceof Map && value instanceof Map) {
+            Map<String, Object> existingMap = (Map<String, Object>) existing;
+            Map<String, Object> valueMap = (Map<String, Object>) value;
+            existingMap.putAll(valueMap);
+            return true;
+        } else if (existing instanceof List && value instanceof List) {
+            List<Object> existingList = (List<Object>) existing;
+            List<Object> valueList = (List<Object>) value;
+            existingList.addAll(valueList);
+            return true;
+        } else {
+            // Если типы не совпадают, просто заменяем
+            return setContextValue(context, path, value);
+        }
+    }
+    
+    /**
+     * Очищает путь (удаляет все содержимое массива или объекта)
+     */
+    private boolean clearContextPath(Map<String, Object> context, String path) {
+        Object target = getValueByJsonPath(context, path);
+        
+        if (target instanceof Map) {
+            ((Map<?, ?>) target).clear();
+            return true;
+        } else if (target instanceof List) {
+            ((List<?>) target).clear();
+            return true;
+        } else {
+            // Для примитивов - устанавливаем null
+            return setContextValue(context, path, null);
+        }
+    }
+    
+    // 🧮 CALCULATE - Математические вычисления
+    private Map<String, Object> executeCalculate(ScenarioBlock node, Map<String, Object> context, Scenario scenario) {
+        LOG.infof("Executing calculate for node: %s", node.id);
+        
+        if (node.parameters == null) {
+            LOG.errorf("Calculate node %s has no parameters", node.id);
+            return createResponse("calculate", "Ошибка: нет параметров для вычислений", null, context);
+        }
+        
+        // Операции вычислений
+        Object operationsObj = node.parameters.get("operations");
+        if (operationsObj == null) {
+            LOG.errorf("Calculate node %s has no operations", node.id);
+            return createResponse("calculate", "Ошибка: нет операций для выполнения", null, context);
+        }
+        
+        List<Map<String, Object>> operations = null;
+        if (operationsObj instanceof List) {
+            operations = (List<Map<String, Object>>) operationsObj;
+        } else if (operationsObj instanceof String) {
+            try {
+                operations = objectMapper.readValue((String) operationsObj, List.class);
+            } catch (Exception e) {
+                LOG.errorf("Failed to parse operations JSON: %s", e.getMessage());
+                return createResponse("calculate", "Ошибка парсинга операций", null, context);
+            }
+        }
+        
+        if (operations == null || operations.isEmpty()) {
+            LOG.warnf("Calculate node %s has empty operations", node.id);
+            return createResponse("calculate", "Нет операций для выполнения", getNextNode(node, context), context);
+        }
+        
+        int successCount = 0;
+        int errorCount = 0;
+        
+        // Выполняем математические операции
+        for (Map<String, Object> operation : operations) {
+            try {
+                String target = (String) operation.get("target");
+                String operationType = (String) operation.get("operation");
+                Object value = operation.get("value");
+                
+                if (target == null || operationType == null) {
+                    LOG.warnf("Invalid operation: target=%s, operation=%s", target, operationType);
+                    errorCount++;
+                    continue;
+                }
+                
+                boolean success = executeCalculateOperation(context, target, operationType, value);
+                if (success) {
+                    successCount++;
+                    LOG.debugf("Calculate operation successful: %s %s %s", target, operationType, value);
+                } else {
+                    errorCount++;
+                    LOG.warnf("Calculate operation failed: %s %s %s", target, operationType, value);
+                }
+                
+            } catch (Exception e) {
+                LOG.errorf(e, "Error executing calculate operation: %s", e.getMessage());
+                errorCount++;
+            }
+        }
+        
+        String nextNode = getNextNode(node, context);
+        updateContext(context, nextNode);
+        
+        // Системный узел - сразу выполняем следующий
+        if (nextNode != null) {
+            ScenarioBlock nextNodeBlock = findNodeById(scenario, nextNode);
+            if (nextNodeBlock != null) {
+                return executeNodeByType(nextNodeBlock, "", context, scenario);
+            }
+        }
+        
+        return createResponse("calculate", String.format("Вычисления выполнены: %d успешно, %d ошибок", successCount, errorCount), nextNode, context);
+    }
+    
+    /**
+     * Выполняет математическую операцию
+     */
+    private boolean executeCalculateOperation(Map<String, Object> context, String target, String operation, Object value) {
+        try {
+            // Получаем текущее значение
+            Object currentValue = getValueByJsonPath(context, target);
+            double current = parseNumber(currentValue);
+            double operand = parseNumber(value);
+            double result;
+            
+            switch (operation.toLowerCase()) {
+                case "add":
+                case "increment":
+                case "+":
+                    result = current + operand;
+                    break;
+                    
+                case "subtract":
+                case "decrement": 
+                case "-":
+                    result = current - operand;
+                    break;
+                    
+                case "multiply":
+                case "*":
+                    result = current * operand;
+                    break;
+                    
+                case "divide":
+                case "/":
+                    if (operand == 0) {
+                        LOG.warnf("Division by zero for target: %s", target);
+                        return false;
+                    }
+                    result = current / operand;
+                    break;
+                    
+                case "modulo":
+                case "%":
+                    if (operand == 0) {
+                        LOG.warnf("Modulo by zero for target: %s", target);
+                        return false;
+                    }
+                    result = current % operand;
+                    break;
+                    
+                case "power":
+                case "^":
+                    result = Math.pow(current, operand);
+                    break;
+                    
+                case "set":
+                case "=":
+                    result = operand;
+                    break;
+                    
+                case "min":
+                    result = Math.min(current, operand);
+                    break;
+                    
+                case "max":
+                    result = Math.max(current, operand);
+                    break;
+                    
+                case "abs":
+                    result = Math.abs(current);
+                    break;
+                    
+                case "random":
+                    // Random от 0 до operand
+                    result = Math.random() * operand;
+                    break;
+                    
+                default:
+                    LOG.warnf("Unknown calculate operation: %s", operation);
+                    return false;
+            }
+            
+            // Сохраняем результат (как целое число если возможно)
+            Object finalResult = (result == Math.floor(result)) ? (int) result : result;
+            return setContextValue(context, target, finalResult);
+            
+        } catch (Exception e) {
+            LOG.errorf(e, "Error in calculate operation %s for target %s", operation, target);
+            return false;
+        }
+    }
+    
+    /**
+     * Парсит число из различных типов
+     */
+    private double parseNumber(Object value) {
+        if (value == null) return 0.0;
+        if (value instanceof Number) return ((Number) value).doubleValue();
+        if (value instanceof String) {
+            try {
+                return Double.parseDouble((String) value);
+            } catch (NumberFormatException e) {
+                LOG.warnf("Cannot parse number from string: %s", value);
+                return 0.0;
+            }
+        }
+        return 0.0;
+    }
+    
     // Вспомогательные методы
     
     private ScenarioBlock findNodeById(Scenario scenario, String nodeId) {
@@ -1026,93 +1509,131 @@ public class AdvancedScenarioEngine {
         
         String result = text;
         
-        // Подстановка всех полей контекста включая api_response
-        for (Map.Entry<String, Object> entry : context.entrySet()) {
-            String key = entry.getKey();
-            Object value = entry.getValue();
-            
-            // Простая подстановка {context.key}
-            String placeholder = "{context." + key + "}";
-            if (result.contains(placeholder)) {
-                result = result.replace(placeholder, String.valueOf(value));
-            }
-            
-            // ИСПРАВЛЕНО: Подстановка для вложенных объектов и массивов
-            if (value instanceof Map) {
-                Map<String, Object> map = (Map<String, Object>) value;
-                for (Map.Entry<String, Object> mapEntry : map.entrySet()) {
-                    String mapKey = mapEntry.getKey();
-                    Object mapValue = mapEntry.getValue();
-                    
-                    // Второй уровень: {context.api_response.service}
-                    String nestedPlaceholder = "{context." + key + "." + mapKey + "}";
-                    if (result.contains(nestedPlaceholder)) {
-                        result = result.replace(nestedPlaceholder, String.valueOf(mapValue));
-                    }
-                    
-                    // Массивы в объектах: {context.api_response.endpoints[0]}
-                    if (mapValue instanceof java.util.List) {
-                        java.util.List<?> list = (java.util.List<?>) mapValue;
-                        for (int i = 0; i < list.size(); i++) {
-                            String arrayPlaceholder = "{context." + key + "." + mapKey + "[" + i + "]}";
-                            if (result.contains(arrayPlaceholder)) {
-                                result = result.replace(arrayPlaceholder, String.valueOf(list.get(i)));
-                            }
-                        }
-                    }
-                    
-                    // Третий уровень для объектов: {context.api_response.stats.memory_usage}
-                    if (mapValue instanceof Map) {
-                        Map<String, Object> nestedMap = (Map<String, Object>) mapValue;
-                        for (Map.Entry<String, Object> nestedEntry : nestedMap.entrySet()) {
-                            String deepPlaceholder = "{context." + key + "." + mapKey + "." + nestedEntry.getKey() + "}";
-                            if (result.contains(deepPlaceholder)) {
-                                result = result.replace(deepPlaceholder, String.valueOf(nestedEntry.getValue()));
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Используем регулярное выражение для поиска всех плейсхолдеров
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\{([^}]+)\\}");
+        java.util.regex.Matcher matcher = pattern.matcher(text);
         
-        // Подстановка из API ответа (обратная совместимость)
-        if (context.containsKey("api_response")) {
-            Map<String, Object> apiResponse = (Map<String, Object>) context.get("api_response");
-            for (Map.Entry<String, Object> entry : apiResponse.entrySet()) {
-                String key = entry.getKey();
-                Object value = entry.getValue();
-                
-                // Первый уровень: {api_response.service}
-                String placeholder = "{api_response." + key + "}";
-                if (result.contains(placeholder)) {
-                    result = result.replace(placeholder, String.valueOf(value));
-                }
-                
-                // Второй уровень для объектов: {api_response.stats.memory_usage}
-                if (value instanceof Map) {
-                    Map<String, Object> nestedMap = (Map<String, Object>) value;
-                    for (Map.Entry<String, Object> nestedEntry : nestedMap.entrySet()) {
-                        String nestedPlaceholder = "{api_response." + key + "." + nestedEntry.getKey() + "}";
-                        if (result.contains(nestedPlaceholder)) {
-                            result = result.replace(nestedPlaceholder, String.valueOf(nestedEntry.getValue()));
-                        }
-                    }
-                }
-                
-                // Массивы: {api_response.endpoints[0]}
-                if (value instanceof java.util.List) {
-                    java.util.List<?> list = (java.util.List<?>) value;
-                    for (int i = 0; i < list.size(); i++) {
-                        String arrayPlaceholder = "{api_response." + key + "[" + i + "]}";
-                        if (result.contains(arrayPlaceholder)) {
-                            result = result.replace(arrayPlaceholder, String.valueOf(list.get(i)));
-                        }
-                    }
-                }
+        while (matcher.find()) {
+            String fullPlaceholder = matcher.group(0); // {context.api_response.data[0].name}
+            String path = matcher.group(1); // context.api_response.data[0].name
+            
+            Object value = getValueByJsonPath(context, path);
+            if (value != null) {
+                result = result.replace(fullPlaceholder, String.valueOf(value));
             }
         }
         
         return result;
+    }
+    
+    /**
+     * Извлекает значение из контекста по JSONPath-подобному пути
+     * Поддерживает:
+     * - context.key - простое поле
+     * - context.api_response.data - вложенный объект
+     * - context.users[0] - элемент массива
+     * - context.api_response.users[0].name - комбинация объектов и массивов
+     * - api_response.data.items[1].status - без префикса context
+     */
+    private Object getValueByJsonPath(Map<String, Object> context, String path) {
+        if (path == null || path.isEmpty()) return null;
+        
+        try {
+            // Убираем префикс "context." если есть
+            if (path.startsWith("context.")) {
+                path = path.substring(8);
+            }
+            
+            // Разбиваем путь на части, учитывая массивы
+            String[] parts = parseJsonPath(path);
+            Object current = context;
+            
+            for (String part : parts) {
+                if (current == null) return null;
+                
+                // Проверяем, является ли часть индексом массива [0]
+                if (part.matches("\\[\\d+\\]")) {
+                    int index = Integer.parseInt(part.substring(1, part.length() - 1));
+                    if (current instanceof java.util.List) {
+                        java.util.List<?> list = (java.util.List<?>) current;
+                        if (index >= 0 && index < list.size()) {
+                            current = list.get(index);
+                        } else {
+                            return null; // Индекс вне границ
+                        }
+                    } else {
+                        return null; // Не массив
+                    }
+                }
+                // Обычное поле объекта
+                else {
+                    if (current instanceof Map) {
+                        Map<?, ?> map = (Map<?, ?>) current;
+                        current = map.get(part);
+                    } else if (current instanceof String && ((String) current).startsWith("{")) {
+                        // Пытаемся распарсить JSON строку
+                        try {
+                            current = objectMapper.readValue((String) current, Map.class);
+                            if (current instanceof Map) {
+                                Map<?, ?> map = (Map<?, ?>) current;
+                                current = map.get(part);
+                            }
+                        } catch (Exception e) {
+                            LOG.warnf("Failed to parse JSON string: %s", e.getMessage());
+                            return null;
+                        }
+                    } else {
+                        return null; // Не объект
+                    }
+                }
+            }
+            
+            return current;
+            
+        } catch (Exception e) {
+            LOG.warnf("Error extracting value by path '%s': %s", path, e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Разбирает JSONPath на части, правильно обрабатывая массивы
+     * Пример: "api_response.users[0].profile.settings[1].value"
+     * Результат: ["api_response", "users", "[0]", "profile", "settings", "[1]", "value"]
+     */
+    private String[] parseJsonPath(String path) {
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inBrackets = false;
+        
+        for (char c : path.toCharArray()) {
+            if (c == '[') {
+                if (current.length() > 0) {
+                    parts.add(current.toString());
+                    current = new StringBuilder();
+                }
+                current.append(c);
+                inBrackets = true;
+            } else if (c == ']') {
+                current.append(c);
+                parts.add(current.toString());
+                current = new StringBuilder();
+                inBrackets = false;
+            } else if (c == '.' && !inBrackets) {
+                if (current.length() > 0) {
+                    parts.add(current.toString());
+                    current = new StringBuilder();
+                }
+            } else {
+                current.append(c);
+            }
+        }
+        
+        if (current.length() > 0) {
+            parts.add(current.toString());
+        }
+        
+        return parts.toArray(new String[0]);
     }
     
     private boolean executeParseScript(String script, String userInput, Map<String, Object> context) {

@@ -1,0 +1,65 @@
+{
+  "id": "context-edit-fix-test",
+  "name": "Context Edit Fix Test",
+  "description": "Тест исправления сохранения operations",
+  "version": "1.0",
+  "language": "uk",
+  "is_entry_point": false,
+  "start_node": "start",
+  "scenario_data": {
+    "id": "context-edit-fix-test",
+    "name": "Context Edit Fix Test",
+    "version": "1.0",
+    "language": "uk",
+    "start_node": "start",
+    "nodes": [
+      {
+        "id": "start",
+        "type": "announce",
+        "parameters": {
+          "message": "🔧 Тестируем исправление сохранения operations"
+        },
+        "next_nodes": ["edit_context"]
+      },
+      {
+        "id": "edit_context",
+        "type": "context-edit",
+        "parameters": {
+          "operations": [
+            {
+              "action": "set",
+              "path": "fix.test",
+              "value": "operations сохраняются!"
+            },
+            {
+              "action": "set",
+              "path": "user.status",
+              "value": "fixed"
+            }
+          ]
+        },
+        "next_nodes": ["show_result"]
+      },
+      {
+        "id": "show_result",
+        "type": "announce",
+        "parameters": {
+          "message": "✅ Результат теста: {context.fix.test}\n👤 Статус: {context.user.status}"
+        },
+        "next_nodes": ["end"]
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "parameters": {
+          "message": "Тест исправления завершен!"
+        }
+      }
+    ],
+    "edges": [
+      {"source": "start", "target": "edit_context"},
+      {"source": "edit_context", "target": "show_result"},
+      {"source": "show_result", "target": "end"}
+    ]
+  }
+}
